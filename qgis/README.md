@@ -34,10 +34,16 @@ Once per site, in the Python environment (not in QGIS):
 
 ```bash
 conda activate bunjilview
-python src/propagate.py --config config.yaml --site <site> --build-feature-cache
-python src/propagate.py --config config.yaml --site <site> --build-sam-cache
+python src/tiling.py     --config config.yaml --ortho data/raw/<site>.tif
+python src/features.py   --config config.yaml --site <site>
+python src/propagate.py  --config config.yaml --site <site> --build-feature-cache
+python src/propagate.py  --config config.yaml --site <site> --build-sam-cache
 python scripts/init_labels_gpkg.py --config config.yaml --site <site>
 ```
+
+The order matters. `--build-feature-cache` only gathers the features that
+`features.py` wrote, and `features.py` only reads the tiles that `tiling.py`
+wrote, so skipping either of the first two makes the third fail.
 
 Those write `data/labels/<site>/site.json`, which records the repo root and the
 interpreter path, and create the GeoPackage with one layer per species.

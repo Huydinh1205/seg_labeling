@@ -2,6 +2,11 @@
 
 Vegetation mapping of alpine bogs (Kosciuszko) from RGB drone orthomosaics.
 
+A full data-flow diagram of the system, in Vietnamese, is at
+[`docs/diagrams/bunjilview-he-thong.html`](docs/diagrams/bunjilview-he-thong.html).
+Open it in a browser: light/dark themes, search, click a node to trace its
+path, and three guided views by stage.
+
 Three ways to get labelled polygons out of an orthomosaic, sharing one code
 base:
 
@@ -96,7 +101,7 @@ Check the environment:
 python -c "import torch, rasterio, segmentation_models_pytorch as smp; print(torch.__version__, rasterio.__version__, smp.__version__)"
 ```
 
-Note down the full path of this interpreter, you need it in step 2.4:
+Note down the full path of this interpreter, you need it in section 2:
 
 ```bash
 python -c "import sys; print(sys.executable)"
@@ -143,6 +148,17 @@ and verifies it every time.
 
 A "site" is one orthomosaic. Everything is keyed by its name.
 
+Run these in order. Each step consumes what the previous one wrote, so skipping
+one makes the next fail:
+
+```bash
+python src/tiling.py     --config config.yaml --ortho data/raw/<site>.tif   # 2.2
+python src/features.py   --config config.yaml --site <site>                 # 2.3
+python src/propagate.py  --config config.yaml --site <site> --build-feature-cache  # 2.4
+python src/propagate.py  --config config.yaml --site <site> --build-sam-cache      # 2.5
+python scripts/init_labels_gpkg.py --config config.yaml --site <site>       # 2.6
+```
+
 ### 2.1 Drop the orthomosaic in
 
 ```
@@ -152,19 +168,42 @@ data/raw/<site>.tif
 The file name without the extension is the site name. `data/raw/test1.tif`
 means the site is `test1`.
 
-### 2.2 Build the feature cache
+### 2.2 Cut the ortho into tiles
 
 ```bash
 conda activate bunjilview          # or: source .venv/bin/activate
+python src/tiling.py --config config.yaml --ortho data/raw/<site>.tif
+```
+
+512x512 tiles with 64px overlap, georeference preserved, into
+`data/tiles/<site>/images/`. Everything downstream reads tiles, not the
+original `.tif`, so this comes first.
+
+### 2.3 Extract the DINOv2 features
+
+```bash
+python src/features.py --config config.yaml --site <site>
+```
+
+Runs DINOv2 over every tile and writes `data/features/<site>/*.npy`. The first
+run downloads the model (~350 MB) into `~/.cache/huggingface/`.
+
+This is the slow step: minutes for a small site, an hour or more for a large
+one. Device selection is automatic (CUDA, then MPS, then CPU); force it with
+`--device cuda`, `--device mps` or `--device cpu`. It is resume-safe, so if it
+is interrupted just run it again and it skips the tiles it has already done.
+
+### 2.4 Build the feature cache
+
+```bash
 python src/propagate.py --config config.yaml --site <site> --build-feature-cache
 ```
 
-DINOv2 dense features for the whole ortho. The first run also downloads the
-model (~350 MB) into `~/.cache/huggingface/`. Expect minutes for a small site,
-an hour or more for a large one. It is resume-safe: re-running skips what is
-already there.
+Flattens every tile's features into one L2-normalised array that propagation
+can search quickly. This step only gathers what 2.3 produced, it does not
+compute features itself, so running it before 2.2 and 2.3 fails.
 
-### 2.3 Build the SAM candidate cache
+### 2.5 Build the SAM candidate cache
 
 ```bash
 python src/propagate.py --config config.yaml --site <site> --build-sam-cache
@@ -178,11 +217,11 @@ in QGIS takes seconds rather than minutes.
 at `8` so your first run finishes quickly; raise it to `32` for finer masks
 once the workflow makes sense to you.
 
-Steps 2.2 and 2.3 together write `data/labels/<site>/site.json`, which records
+Steps 2.4 and 2.5 together write `data/labels/<site>/site.json`, which records
 the repo root and the interpreter path. The QGIS side reads it, which is why
 you rarely have to configure anything by hand.
 
-### 2.4 Create the species layers
+### 2.6 Create the species layers
 
 ```bash
 python scripts/init_labels_gpkg.py --config config.yaml --site <site>
@@ -206,7 +245,7 @@ Do **not** create these layers by hand in QGIS. Miss one Geo-SAM field and the
 plugin rejects the layer with *"The fields of this vector do not match the SAM
 feature fields"*.
 
-### 2.5 Point QGIS Processing at the repo
+### 2.7 Point QGIS Processing at the repo
 
 QGIS -> **Settings > Options > Processing > Scripts > Scripts folders** -> add
 the repo's `qgis/` folder -> OK -> restart QGIS.
@@ -398,6 +437,16 @@ once.
 
 ## 7. Troubleshooting
 
+**"No tile_*.npy features in data/features/<site>"**
+You skipped step 2.2 or 2.3. `--build-feature-cache` only gathers what
+`features.py` produced. Run `tiling.py`, then `features.py`, then the cache
+build again.
+
+**"No .tif tiles found" from features.py**
+Step 2.2 has not run, or it wrote to a different site name. The site name is
+the ortho file name without the extension, and `data/tiles/<site>/images/`
+must exist.
+
 **The polygon disappears when I press S.**
 The patches are not applied. Run `repair_session.py` and check it reports
 `RESULT: 6/6 PASS`. This comes back every time the Geo-SAM plugin is
@@ -432,7 +481,7 @@ on a single-symbol renderer. Run `repair_session.py`.
 
 **Editing a script in `qgis/` changes nothing.**
 There is a stale copy inside the QGIS profile, from "Add Script to Toolbox".
-Remove it and point Processing at the repo folder instead (step 2.5).
+Remove it and point Processing at the repo folder instead (step 2.7).
 
 **Propagation finds nothing, or everything.**
 Adjust `threshold` and `margin` (step 3.3). If it is still wrong, your seeds

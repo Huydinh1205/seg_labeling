@@ -1,0 +1,384 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Bunjilview · Luồng dữ liệu phân loại thực vật bog núi cao",
+    "output": "/home/claude/bunjilview-he-thong.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "chuan-bi",
+        "label": "Chuẩn bị dữ liệu",
+        "focus": [
+          "ortho",
+          "tiles",
+          "feats",
+          "fcache",
+          "samcache"
+        ],
+        "note": "Chạy một lần cho mỗi site: cắt tile, trích feature, dựng hai cache."
+      },
+      {
+        "id": "gan-nhan",
+        "label": "Vòng lặp gán nhãn",
+        "focus": [
+          "qgis",
+          "gpkg",
+          "propagate",
+          "fcache",
+          "samcache"
+        ],
+        "note": "Vẽ một seed cho mỗi loài, lan vùng, dọn polygon sai rồi lặp lại."
+      },
+      {
+        "id": "huan-luyen",
+        "label": "Huấn luyện và dự đoán",
+        "focus": [
+          "gpkg",
+          "autopipe",
+          "labels",
+          "train",
+          "infer"
+        ],
+        "note": "Hai nhánh tạo nhãn cùng đổ về một label raster dùng để huấn luyện."
+      }
+    ],
+    "viewBox": [
+      1080,
+      500
+    ]
+  },
+  "stages": [
+    {
+      "label": "Dữ liệu gốc"
+    },
+    {
+      "label": "Tiền xử lý"
+    },
+    {
+      "label": "Cache và ứng viên"
+    },
+    {
+      "label": "Gán nhãn"
+    },
+    {
+      "label": "Huấn luyện và dự đoán"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ortho",
+      "type": "database",
+      "label": "Ảnh drone gốc",
+      "sublabel": "ortho RGB",
+      "tag": "data/raw/<site>.tif",
+      "stage": 0,
+      "row": 1,
+      "width": 132
+    },
+    {
+      "id": "tiles",
+      "type": "backend",
+      "label": "Cắt tile",
+      "sublabel": "tiling.py",
+      "tag": "512×512, chồng 64 px",
+      "stage": 1,
+      "row": 0,
+      "width": 132
+    },
+    {
+      "id": "feats",
+      "type": "backend",
+      "label": "Feature DINOv2",
+      "sublabel": "features.py",
+      "tag": "768 chiều mỗi patch",
+      "stage": 1,
+      "row": 1,
+      "width": 132
+    },
+    {
+      "id": "autopipe",
+      "type": "cloud",
+      "label": "Nhánh tự động",
+      "sublabel": "k-means",
+      "tag": "~40 cụm, pseudo-label",
+      "stage": 2,
+      "row": 0,
+      "width": 132
+    },
+    {
+      "id": "fcache",
+      "type": "database",
+      "label": "Cache feature phẳng",
+      "sublabel": "cache feature",
+      "tag": "_patch_feats.npy",
+      "stage": 2,
+      "row": 1,
+      "width": 132
+    },
+    {
+      "id": "samcache",
+      "type": "database",
+      "label": "Thư viện mask SAM",
+      "sublabel": "SAM auto-mask",
+      "tag": "sam_masks.gpkg",
+      "stage": 2,
+      "row": 2,
+      "width": 132
+    },
+    {
+      "id": "qgis",
+      "type": "frontend",
+      "label": "Vẽ seed trong QGIS",
+      "sublabel": "Geo-SAM",
+      "tag": "1 seed cho mỗi loài",
+      "stage": 3,
+      "row": 0,
+      "width": 132
+    },
+    {
+      "id": "gpkg",
+      "type": "database",
+      "label": "GeoPackage nhãn",
+      "sublabel": "1 layer / loài",
+      "tag": "<site>.gpkg",
+      "stage": 3,
+      "row": 1,
+      "width": 132
+    },
+    {
+      "id": "propagate",
+      "type": "backend",
+      "label": "Lan vùng từ seed",
+      "sublabel": "propagate.py",
+      "tag": "cosine + one-vs-rest",
+      "stage": 3,
+      "row": 2,
+      "width": 132
+    },
+    {
+      "id": "labels",
+      "type": "database",
+      "label": "Nhãn raster",
+      "sublabel": "raster nhãn",
+      "tag": "<site>_labels.tif",
+      "stage": 4,
+      "row": 0,
+      "width": 132
+    },
+    {
+      "id": "train",
+      "type": "backend",
+      "label": "Huấn luyện",
+      "sublabel": "train.py",
+      "tag": "checkpoints/best.pt",
+      "stage": 4,
+      "row": 1,
+      "width": 132
+    },
+    {
+      "id": "infer",
+      "type": "backend",
+      "label": "Dự đoán site mới",
+      "sublabel": "infer.py",
+      "tag": "GeoTIFF phân loại",
+      "stage": 4,
+      "row": 2,
+      "width": 132
+    }
+  ],
+  "flows": [
+    {
+      "id": "ortho-tiles",
+      "from": "ortho",
+      "to": "tiles",
+      "label": "ảnh .tif",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tiles-feats",
+      "from": "tiles",
+      "to": "feats",
+      "label": "tile ảnh",
+      "variant": "emphasis",
+      "labelAt": [
+        315,
+        200
+      ]
+    },
+    {
+      "id": "feats-fcache",
+      "from": "feats",
+      "to": "fcache",
+      "label": "feature",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        412,
+        258
+      ]
+    },
+    {
+      "id": "feats-auto",
+      "from": "feats",
+      "to": "autopipe",
+      "label": "feature (cách 2)",
+      "variant": "dashed",
+      "route": "vertical-channel",
+      "channelX": 440,
+      "labelAt": [
+        440,
+        214
+      ]
+    },
+    {
+      "id": "ortho-sam",
+      "from": "ortho",
+      "to": "samcache",
+      "label": "ảnh cho SAM",
+      "route": "bottom-channel"
+    },
+    {
+      "id": "fcache-sam",
+      "from": "fcache",
+      "to": "samcache",
+      "label": "vector mask",
+      "labelAt": [
+        530,
+        314
+      ]
+    },
+    {
+      "id": "fcache-prop",
+      "from": "fcache",
+      "to": "propagate",
+      "label": "cache feature",
+      "variant": "emphasis",
+      "route": "vertical-channel",
+      "channelX": 665,
+      "labelAt": [
+        640,
+        356
+      ]
+    },
+    {
+      "id": "sam-prop",
+      "from": "samcache",
+      "to": "propagate",
+      "label": "mask SAM",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        622,
+        385
+      ]
+    },
+    {
+      "id": "qgis-gpkg",
+      "from": "qgis",
+      "to": "gpkg",
+      "label": "polygon seed",
+      "variant": "emphasis",
+      "labelAt": [
+        745,
+        200
+      ]
+    },
+    {
+      "id": "gpkg-prop",
+      "from": "gpkg",
+      "to": "propagate",
+      "label": "seed",
+      "route": "vertical-channel",
+      "channelX": 705,
+      "labelAt": [
+        705,
+        328
+      ]
+    },
+    {
+      "id": "prop-gpkg",
+      "from": "propagate",
+      "to": "gpkg",
+      "label": "polygon auto",
+      "variant": "emphasis",
+      "route": "vertical-channel",
+      "channelX": 785,
+      "labelAt": [
+        785,
+        328
+      ]
+    },
+    {
+      "id": "gpkg-labels",
+      "from": "gpkg",
+      "to": "labels",
+      "label": "rasterize",
+      "variant": "emphasis"
+    },
+    {
+      "id": "auto-labels",
+      "from": "autopipe",
+      "to": "labels",
+      "label": "pseudo-label",
+      "variant": "dashed",
+      "route": "top-channel"
+    },
+    {
+      "id": "labels-train",
+      "from": "labels",
+      "to": "train",
+      "label": "mask tile",
+      "variant": "emphasis",
+      "labelAt": [
+        960,
+        200
+      ]
+    },
+    {
+      "id": "train-infer",
+      "from": "train",
+      "to": "infer",
+      "label": "checkpoint",
+      "variant": "emphasis",
+      "labelAt": [
+        960,
+        314
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Chuẩn bị một lần cho mỗi site",
+      "items": [
+        "tiling.py: ortho .tif → data/tiles/images/",
+        "features.py: tile → data/features/*.npy",
+        "--build-feature-cache: *.npy → _patch_feats.npy",
+        "--build-sam-cache: ortho + cache → sam_masks",
+        "init_labels_gpkg.py: → 1 layer mỗi loài"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Vòng lặp gán nhãn, cho từng loài",
+      "items": [
+        "Click layer loài, Geo-SAM bám theo layer đó",
+        "FG → click → S: ảnh canvas → 1 polygon seed",
+        "Nút Propagate: seed + 2 cache → polygon auto",
+        "Dọn polygon sai rồi chạy lại: 24 → 12 → 4"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Xuất nhãn và huấn luyện",
+      "items": [
+        "--rasterize: mọi polygon → <site>_labels.tif",
+        "tiling.py --mask: raster → data/tiles/masks/",
+        "train.py: ảnh tile + mask tile → best.pt",
+        "infer.py: ortho mới + best.pt → GeoTIFF",
+        "Không colour augmentation (Sphagnum theo màu)"
+      ]
+    }
+  ]
+}
