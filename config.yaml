@@ -1,0 +1,129 @@
+# ============================================================
+# Bunjilview Alpine Bog Segmentation - Config
+# ============================================================
+
+paths:
+  raw_dir:    data/raw        # downloaded orthomosaics (.tif)
+  tiles_dir:  data/tiles      # 512x512 image tiles
+  pseudo_dir: data/pseudo     # generated label rasters
+  val_dir:    data/val        # hand-labelled validation tiles
+  features_dir: data/features # DINOv2 feature maps (.npy)
+  clusters_dir: data/clusters # cluster maps (.npy / .tif)
+  checkpoints_dir: checkpoints
+
+# ============================================================
+# Class map  (index -> species name)
+# ============================================================
+classes:
+  0:  None               # background / unlabelled
+  1:  Empidisma_minus    # rope rush
+  2:  Dracophyllum_continentis  # candle heath
+  3:  Poa_costiniana     # snow grass
+  4:  Carex_gaudichaudiana  # fen sedge
+  5:  Celmisia_pugioniformis  # slender snow daisy
+  6:  Sphagnum_R         # sphagnum red-type
+  7:  Sphagnum_G         # sphagnum green-type
+  8:  Sphagnum_Y         # sphagnum yellow-type
+  9:  Other
+
+num_classes: 10
+
+# ============================================================
+# Tiling
+# ============================================================
+tiling:
+  tile_size: 512          # pixels
+  overlap:   64           # pixels of overlap between adjacent tiles
+  min_valid_fraction: 0.1 # skip tiles with > 90% nodata
+
+# ============================================================
+# DINOv2 feature extraction
+# ============================================================
+dino:
+  model: "facebook/dinov2-base"   # or dinov2-large for better features
+  patch_size: 14                  # pixels per patch
+  batch_size: 4                   # tiles per forward pass
+  device: "mps"                   # "cuda" on NVIDIA, "mps" on Apple Silicon, "cpu" otherwise
+  upsample_mode: "bilinear"       # interpolation for feature upsampling
+
+# ============================================================
+# Clustering
+# ============================================================
+clustering:
+  n_clusters: 20          # over-cluster deliberately (30-50 for a real run; 20 = quick test)
+  random_state: 42
+  max_iter: 500
+  n_init: 10
+  sample_fraction: 0.05   # fraction of pixels to fit k-means on (memory)
+  patches_per_cluster: 12 # patches to show in naming montage
+
+# ============================================================
+# Training (DeepLabV3+)
+# ============================================================
+training:
+  encoder: "resnet50"
+  encoder_weights: "imagenet"
+  encoder_output_stride: 8     # preserve detail for Celmisia
+  in_channels: 3
+  # Loss: focal (no colour ambiguity in labels, class imbalance is real)
+  loss: "focal"
+  focal_gamma: 2.0
+  # Augmentation: NO colour aug (see CLAUDE.md section 3.1)
+  augmentation:
+    hflip: true
+    vflip: true
+    rotate90: true
+    gaussian_noise_std: 0.01
+    # hue_jitter: NEVER
+    # saturation_jitter: NEVER
+  batch_size: 8
+  lr: 0.0001
+  weight_decay: 0.0001
+  epochs: 50
+  val_interval: 5          # validate every N epochs
+  num_workers: 4
+
+# ============================================================
+# Inference
+# ============================================================
+inference:
+  tile_size: 512
+  overlap: 64
+  batch_size: 4
+
+# ============================================================
+# Interactive species propagation  (src/propagate.py, "Cach 1.5")
+# Draw 1 Geo-SAM seed polygon per species -> auto-draw the rest.
+# ============================================================
+propagate:
+  labels_dir: data/labels     # per-site <site>.gpkg + caches + prototypes
+
+  sam:                        # one-time SAM auto-mask library per site
+    backend: "vit_b"          # samgeo model_type: vit_b (fast, ~375MB) / vit_l / vit_h (slow, best).
+                               # No CUDA + mps unusable here (see device below) -> everything runs
+                               # on CPU, so start with vit_b; move up to vit_l/vit_h only if quality
+                               # is not good enough and you can afford the extra time.
+    checkpoint: null          # null -> samgeo auto-downloads to ~/.cache
+    device: null              # null -> autodetect cuda -> cpu. NOT mps: segment-anything's
+                               # automatic mask generator crashes on mps (float64 unsupported)
+    tile_size: 1024           # samgeo's own batch tiling window, no overlap knob exposed
+    points_per_side: 8        # TEMPORARY, keeps the first run fast (~4 min). Raise to 32
+                               # (slower, finer masks) once you are happy with the workflow.
+    pred_iou_thresh: 0.86
+    min_mask_region_area: 400 # px - drop specks
+
+  prototype:
+    topk: 3                   # k-means centroids per species (1 = plain mean)
+    seed_sources: ["seed", "auto", null]  # which polygons count as positives on re-run
+
+  match:
+    metric: "cosine"
+    threshold: 0.60           # min cosine similarity to the species prototype
+    margin: 0.05              # one-vs-rest: sim_species - sim_best_other_species
+    dup_iou: 0.30             # skip a candidate overlapping an existing polygon by > this
+    min_area_m2: 0.05
+    max_area_m2: 500.0
+    simplify_tol_m: 0.02      # Douglas-Peucker tolerance on kept polygons
+
+  rasterize:
+    overlap_priority: "score" # "score" (hand-drawn wins, then similarity) or "class_order"

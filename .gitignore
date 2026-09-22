@@ -1,0 +1,79 @@
+# ---------------------------------------------------------------- data
+# Everything under data/ is generated or site-specific and far too large for
+# git (orthomosaics, tiles, DINOv2 features, SAM caches are gigabytes).
+# The directory skeleton is kept via .gitkeep files.
+data/**
+!data/**/
+!data/**/.gitkeep
+
+# Model weights
+checkpoints/**
+!checkpoints/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# ---------------------------------------------------------------- outputs
+# Reports written by the helper scripts
+repair_report.txt
+test_report.txt
+
+# ---------------------------------------------------------------- backups
+# Backups the patch/refactor scripts leave behind
+*.bak
+*.bak-*
+*.corrupt
+*.stale-bak
+
+# ---------------------------------------------------------------- geopackage
+# SQLite sidecar files. Never commit these: they are transient and committing
+# them can corrupt a GeoPackage for whoever pulls next.
+*.gpkg-wal
+*.gpkg-shm
+*.gpkg-journal
+.fuse_hidden*
+
+# ---------------------------------------------------------------- python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+
+# ---------------------------------------------------------------- tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# ---------------------------------------------------------------- editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------------------------- os
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------- qgis
+*.qgz~
+*.qgs~
+
+# ---------------------------------------------------------------- secrets
+.env
+.env.*
+!.env.example
