@@ -75,7 +75,7 @@ def _cfg():
 
 REPO, SITE, VENV_PYTHON = _cfg()
 
-SPECIES = 'Poa_costiniana'        # default species when setup() is called bare
+SPECIES = None                    # None = first species in config.yaml
 
 # Colours picked to stand out on drone imagery: no greens, no earth browns.
 PALETTE = {
@@ -125,24 +125,176 @@ def _style(layer, hex_color):
     layer.triggerRepaint()
 
 
+def _norm(path):
+    """Comparable form of a path: normalised separators, case-folded on Windows."""
+    return os.path.normcase(os.path.normpath(str(path)))
+
+
+def _layer_gpkg(layer):
+    """The GeoPackage path behind an OGR layer, without the |layername= part."""
+    try:
+        return _norm(layer.source().split('|')[0])
+    except RuntimeError:
+        return ''
+
+
+def _is_site_layer(layer, gpkg):
+    """True when `layer` comes from `gpkg`, however the path was spelled.
+
+    Substring matching on the raw source string breaks on Windows: this script
+    builds paths with os.path.join (backslashes) while layers added through
+    the QGIS GUI carry forward slashes, so the same file never matched and
+    every layer was loaded a second time.
+    """
+    return _layer_gpkg(layer) == _norm(gpkg)
+
+
+def _live_raster(name, fallback=None):
+    """The orthomosaic layer currently in the project, looked up by NAME.
+
+    Never cache a QgsRasterLayer across calls. When a layer is removed from the
+    project QGIS deletes the C++ object, and the Python wrapper left behind
+    raises "wrapped C/C++ object of type QgsRasterLayer has been deleted" the
+    next time anything touches it. Names are plain strings, so they never go
+    stale.
+    """
+    for lyr in QgsProject.instance().mapLayers().values():
+        try:
+            if lyr.name() == name and isinstance(lyr, QgsRasterLayer):
+                lyr.crs().authid()          # touches the C++ object
+                return lyr
+        except RuntimeError:
+            continue
+    return fallback
+
+
+def _forget_dead_raster(sel):
+    """Set every plugin attribute that holds a deleted QgsRasterLayer to None.
+
+    Geo-SAM keeps the live-encoding raster in `runtime_layer` and reads it on
+    every FG click. Once that C++ object is gone, any call on it raises, so
+    the reference has to be cleared before the plugin can activate a new one.
+    Returns True when something was cleared.
+    """
+    try:
+        from qgis.PyQt import sip
+    except ImportError:
+        import sip
+    cleared = False
+    for obj in (sel, getattr(sel, 'img_crs_manager', None)):
+        if obj is None:
+            continue
+        try:
+            items = list(vars(obj).items())
+        except TypeError:
+            continue
+        for key, val in items:
+            if isinstance(val, QgsRasterLayer):
+                try:
+                    dead = sip.isdeleted(val)
+                except RuntimeError:
+                    dead = True
+                if dead:
+                    setattr(obj, key, None)
+                    cleared = True
+    return cleared
+
+
+def _image_source_alive(sel, ras):
+    """True when Geo-SAM's image source is live AND points at `ras`.
+
+    hasattr(sel, 'img_crs_manager') alone is not enough: the attribute survives
+    after the raster it was built from has been deleted, and Geo-SAM then fails
+    inside prepare_realtime_raster_query with a deleted-object RuntimeError the
+    moment you press FG.
+    """
+    if not hasattr(sel, 'img_crs_manager'):
+        return False
+    try:
+        cur = sel.wdg_sel.LiveEncodingLayerComboBox.currentLayer()
+        if cur is None or ras is None or cur.id() != ras.id():
+            return False
+        cur.crs().authid()
+        ras.crs().authid()
+    except RuntimeError:
+        return False
+    # The combo box drops deleted layers on its own, so it can look healthy
+    # while the plugin still holds the old wrapper: execute_segmentation()
+    # reads self.runtime_layer, never the combo. Check that one explicitly,
+    # then walk the rest of the plugin's attributes for any other raster.
+    try:
+        from qgis.PyQt import sip
+    except ImportError:            # older QGIS builds
+        import sip
+    rt = getattr(sel, 'runtime_layer', None)
+    if rt is None:
+        return False
+    try:
+        if sip.isdeleted(rt) or rt.id() != ras.id():
+            return False
+    except RuntimeError:
+        return False
+    holders = [sel, getattr(sel, 'img_crs_manager', None)]
+    for obj in holders:
+        if obj is None:
+            continue
+        try:
+            attrs = vars(obj)
+        except TypeError:
+            continue
+        for val in attrs.values():
+            if isinstance(val, QgsRasterLayer):
+                try:
+                    if sip.isdeleted(val) or val.id() != ras.id():
+                        return False
+                except RuntimeError:
+                    return False
+    return True
+
+
 def _bind(sel, ras, target, say):
     """Bind Geo-SAM to `target`. Image source FIRST, annotation layer SECOND."""
     wdg = sel.wdg_sel
 
     # Commit anything unsaved on the previous layer so no work is lost.
-    old = sel.polygon.get_layer() if hasattr(sel, 'polygon') else None
-    if old is not None and old.id() != target.id() and old.isEditable():
-        if old.isModified():
-            old.commitChanges()
-            say('committed pending edits on %r' % old.name())
-        else:
-            old.rollBack()
+    try:
+        old = sel.polygon.get_layer() if hasattr(sel, 'polygon') else None
+        if old is not None and old.id() != target.id() and old.isEditable():
+            if old.isModified():
+                old.commitChanges()
+                say('committed pending edits on %r' % old.name())
+            else:
+                old.rollBack()
+    except RuntimeError:
+        pass                # the previous layer was deleted: nothing to save
 
-    # Image source: activate ONCE. Re-running it calls clear_layers and rebuilds
-    # the runtime, which is slow and pointless.
-    if not hasattr(sel, 'img_crs_manager'):
+    # Image source: activate when it is missing OR stale. Re-running it calls
+    # clear_layers and rebuilds the runtime, which is slow, so do not do it on
+    # every bind - but a stale reference is worse: pressing FG then dies with
+    # "wrapped C/C++ object of type QgsRasterLayer has been deleted".
+    if not _image_source_alive(sel, ras):
+        if hasattr(sel, 'img_crs_manager'):
+            delattr(sel, 'img_crs_manager')
+            say('image source was stale, rebuilding it')
+        # The plugin's _set_runtime_for_layer() starts with
+        # current_runtime_layer.id(), which raises on a deleted wrapper and
+        # aborts the whole re-activation. Drop the dead reference first.
+        _forget_dead_raster(sel)
         wdg.LiveEncodingLayerComboBox.setLayer(ras)
-        sel.on_live_encoding_layer_changed()
+        try:
+            sel.on_live_encoding_layer_changed()
+        except Exception as e:
+            say('first activation attempt failed: %r' % e)
+        if not hasattr(sel, 'img_crs_manager'):
+            # The handler may skip a layer it believes is already active.
+            # Force a real change: clear the combo, then select the raster.
+            try:
+                wdg.LiveEncodingLayerComboBox.setLayer(None)
+                sel.on_live_encoding_layer_changed()
+            except Exception:
+                pass
+            wdg.LiveEncodingLayerComboBox.setLayer(ras)
+            sel.on_live_encoding_layer_changed()
     if not hasattr(sel, 'img_crs_manager'):
         raise RuntimeError('img_crs_manager was not created, the image source '
                            'did not activate')
@@ -159,7 +311,7 @@ def _bind(sel, ras, target, say):
     return sel.polygon.get_layer()
 
 
-def _install_hook(repo, gpkg, names, ras, sel, say):
+def _install_hook(repo, gpkg, names, ras_name, sel, say):
     """Click a layer in the Layers panel -> Geo-SAM switches to it."""
     import qgis.utils
     from qgis.utils import iface
@@ -174,12 +326,22 @@ def _install_hook(repo, gpkg, names, ras, sel, say):
 
     def on_changed(lyr):
         try:
-            if lyr is None or lyr.name() not in names or gpkg not in lyr.source():
+            if lyr is None or lyr.name() not in names or not _is_site_layer(lyr, gpkg):
                 return
+            ras = _live_raster(ras_name)
             if hasattr(sel, 'polygon'):
-                cur = sel.polygon.get_layer()
-                if cur is not None and cur.id() == lyr.id():
-                    return
+                try:
+                    cur = sel.polygon.get_layer()
+                except RuntimeError:
+                    cur = None
+                if (cur is not None and cur.id() == lyr.id()
+                        and _image_source_alive(sel, ras)):
+                    return          # already bound and healthy: nothing to do
+            if ras is None:
+                iface.messageBar().pushWarning(
+                    'Geo-SAM', 'orthomosaic %r is no longer in the project, '
+                    're-run repair_session.py' % ras_name)
+                return
             _bind(sel, ras, lyr, lambda m: None)
             _style(lyr, _color_for(lyr.name(), names))
             if not lyr.isEditable():
@@ -193,19 +355,74 @@ def _install_hook(repo, gpkg, names, ras, sel, say):
 
     view.currentLayerChanged.connect(on_changed)
     qgis.utils._bunjilview_layer_hook = on_changed
+
+    # Also watch the project itself: if the orthomosaic is removed, drop the
+    # plugin's reference before it can dangle; if it comes back, rebind the
+    # current species layer so FG works again without any click.
+    proj = QgsProject.instance()
+    prev = getattr(qgis.utils, '_bunjilview_raster_hooks', None)
+    if prev:
+        for sig, fn in prev:
+            try:
+                sig.disconnect(fn)
+            except Exception:
+                pass
+
+    def on_will_remove(ids):
+        try:
+            rt = getattr(sel, 'runtime_layer', None)
+            if rt is not None and rt.id() in ids:
+                sel.runtime_layer = None
+        except RuntimeError:
+            sel.runtime_layer = None
+
+    def _rebind_to(lyr):
+        try:
+            if not hasattr(sel, 'polygon'):
+                return
+            cur = sel.polygon.get_layer()
+            if cur is None or not _is_site_layer(cur, gpkg):
+                return
+            _bind(sel, lyr, cur, lambda m: None)
+            iface.messageBar().pushInfo(
+                'Geo-SAM', 'orthomosaic %s reloaded, image source rebuilt' % ras_name)
+        except Exception as e:
+            iface.messageBar().pushWarning(
+                'Geo-SAM', 'could not rebind after the orthomosaic changed: %s' % e)
+
+    def on_added(layers):
+        # layersAdded fires after the project registered the layers, but the
+        # plugin's layer combo box refreshes from the same signal and may run
+        # after us, so defer one event-loop turn before touching it.
+        from qgis.PyQt.QtCore import QTimer
+        for lyr in layers:
+            if isinstance(lyr, QgsRasterLayer) and lyr.name() == ras_name:
+                QTimer.singleShot(0, lambda l=lyr: _rebind_to(l))
+                return
+
+    proj.layersWillBeRemoved.connect(on_will_remove)
+    proj.layersAdded.connect(on_added)
+    qgis.utils._bunjilview_raster_hooks = [
+        (proj.layersWillBeRemoved, on_will_remove),
+        (proj.layersAdded, on_added),
+    ]
     say('hook installed: clicking a layer in the Layers panel switches Geo-SAM')
 
 
 def setup(repo=REPO, site=SITE, species=SPECIES, verbose=True):
     say = (lambda m: print(m)) if verbose else (lambda m: None)
     proj = QgsProject.instance()
-    gpkg = os.path.join(repo, 'data/labels', site, site + '.gpkg')
-    ortho = os.path.join(repo, 'data/raw', site + '.tif')
+    gpkg = os.path.join(repo, 'data', 'labels', site, site + '.gpkg')
+    ortho = os.path.join(repo, 'data', 'raw', site + '.tif')
     if not os.path.isfile(gpkg):
         raise RuntimeError('%s not found. Run scripts/init_labels_gpkg.py first.'
                            % gpkg)
 
     names = _species_names(repo)
+    if not names:
+        raise RuntimeError('config.yaml has no species under `classes`')
+    if species is None:
+        species = names[0]
     if species not in names:
         raise RuntimeError("'%s' is not in config.yaml `classes`. Available: %s"
                            % (species, ', '.join(names)))
@@ -214,7 +431,7 @@ def setup(repo=REPO, site=SITE, species=SPECIES, verbose=True):
     loaded = {}
     for name in names:
         lyr = next((l for l in proj.mapLayers().values()
-                    if l.name() == name and gpkg in l.source()), None)
+                    if l.name() == name and _is_site_layer(l, gpkg)), None)
         if lyr is None:
             lyr = QgsVectorLayer(gpkg + '|layername=' + name, name, 'ogr')
             if not lyr.isValid():
@@ -238,7 +455,7 @@ def setup(repo=REPO, site=SITE, species=SPECIES, verbose=True):
         % (species, len(target.fields()), target.featureCount()))
 
     # -- orthomosaic --
-    ras = next((l for l in proj.mapLayers().values() if l.name() == site), None)
+    ras = _live_raster(site)
     if ras is None and os.path.isfile(ortho):
         ras = QgsRasterLayer(ortho, site)
         if ras.isValid():
@@ -304,7 +521,7 @@ def setup(repo=REPO, site=SITE, species=SPECIES, verbose=True):
     except Exception as e:
         say('could not zoom to the orthomosaic: %r' % e)
 
-    _install_hook(repo, gpkg, names, ras, sel, say)
+    _install_hook(repo, gpkg, names, ras.name(), sel, say)
 
     say("\nReady. Draw a seed for '%s', press S, then run "
         "Scripts > Bunjilview > Propagate species from seed and pick this same "

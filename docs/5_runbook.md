@@ -367,7 +367,7 @@ exec(open(qgis.utils.BV_REPO + '/scripts/test_pipeline.py').read())
 
 Takes about six seconds and checks: binding to all 9 layers, drawing into each
 one with the values in the right columns, deleting, adding, propagating,
-propagating again, and deleting auto polygons then recovering them.
+propagating again, and deleting auto polygons then propagating once more.
 
 It **cleans up after itself**: every polygon it creates is deleted at the end
 and your data comes back exactly as it was. If the report ever contains

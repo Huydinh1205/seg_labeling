@@ -71,6 +71,34 @@ def _cfg():
 
 REPO, SITE, VENV_PYTHON = _cfg()
 
+
+def _child_env(venv_python):
+    """Environment for the venv interpreter with QGIS's own Python scrubbed.
+    QGIS exports PYTHONHOME/PYTHONPATH/GDAL_DATA/PROJ_LIB for its bundled
+    copies; a conda interpreter inheriting them loads the wrong stdlib and
+    the wrong proj.db. Conda on Windows also needs Library\\bin on PATH."""
+    env = dict(os.environ)
+    for k in ('PYTHONHOME', 'PYTHONPATH', 'PYTHONSTARTUP', 'PYTHONNOUSERSITE',
+              'GDAL_DATA', 'GDAL_DRIVER_PATH', 'PROJ_LIB', 'PROJ_DATA',
+              'GEOTIFF_CSV', 'QT_PLUGIN_PATH', 'QGIS_PREFIX_PATH'):
+        env.pop(k, None)
+    env['PYTHONIOENCODING'] = 'utf-8'
+    root = os.path.dirname(os.path.abspath(venv_python))
+    if os.path.basename(root).lower() == 'bin':
+        root = os.path.dirname(root)
+    extra = [d for d in (root, os.path.join(root, 'Library', 'bin'),
+                         os.path.join(root, 'Scripts'), os.path.join(root, 'bin'))
+             if os.path.isdir(d)]
+    env['PATH'] = os.pathsep.join(extra + [env.get('PATH', '')])
+    for var, rel in (('PROJ_LIB', ('Library', 'share', 'proj')),
+                     ('PROJ_LIB', ('share', 'proj')),
+                     ('GDAL_DATA', ('Library', 'share', 'gdal')),
+                     ('GDAL_DATA', ('share', 'gdal'))):
+        d = os.path.join(root, *rel)
+        if var not in env and os.path.isdir(d):
+            env[var] = d
+    return env
+
 # GeoPackage geometry blob = 'GP' + version + flags + srs_id(4) + envelope + WKB
 _ENV_SIZE = {0: 0, 1: 32, 2: 48, 3: 48, 4: 64}
 
@@ -184,7 +212,9 @@ def repair(repo=REPO, site=SITE, venv_python=VENV_PYTHON, verbose=True):
 
     p = subprocess.run([venv_python, 'scripts/init_labels_gpkg.py',
                         '--config', 'config.yaml', '--site', site],
-                       cwd=repo, capture_output=True, text=True)
+                       cwd=repo, capture_output=True, text=True,
+                       encoding='utf-8', errors='replace',
+                       env=_child_env(venv_python))
     if p.returncode != 0:
         say(p.stdout); say(p.stderr[-2000:])
         raise RuntimeError('failed to create the new file')

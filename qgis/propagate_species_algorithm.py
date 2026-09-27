@@ -175,6 +175,39 @@ class PropagateSpeciesAlgorithm(QgsProcessingAlgorithm):
         return None
 
     @staticmethod
+    def _child_env(venv_python):
+        """Environment for the venv interpreter, with QGIS's own Python scrubbed.
+
+        QGIS exports PYTHONHOME, PYTHONPATH, GDAL_DATA and PROJ_LIB pointing at
+        its bundled copies (on Windows the OSGeo4W launcher sets all of them).
+        A conda interpreter that inherits those loads the wrong stdlib and the
+        wrong proj.db and dies before propagate.py starts. Conda environments
+        on Windows also need their Library\bin on PATH when run without
+        `conda activate`, or GDAL's DLLs are not found.
+        """
+        env = dict(os.environ)
+        for k in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP", "PYTHONNOUSERSITE",
+                  "GDAL_DATA", "GDAL_DRIVER_PATH", "PROJ_LIB", "PROJ_DATA",
+                  "GEOTIFF_CSV", "QT_PLUGIN_PATH", "QGIS_PREFIX_PATH"):
+            env.pop(k, None)
+        env["PYTHONIOENCODING"] = "utf-8"
+        root = os.path.dirname(os.path.abspath(venv_python))
+        if os.path.basename(root).lower() == "bin":       # conda/venv on POSIX
+            root = os.path.dirname(root)
+        extra = [root, os.path.join(root, "Library", "bin"),
+                 os.path.join(root, "Scripts"), os.path.join(root, "bin")]
+        extra = [d for d in extra if os.path.isdir(d)]
+        env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
+        for var, rel in (("PROJ_LIB", ("Library", "share", "proj")),
+                         ("PROJ_LIB", ("share", "proj")),
+                         ("GDAL_DATA", ("Library", "share", "gdal")),
+                         ("GDAL_DATA", ("share", "gdal"))):
+            d = os.path.join(root, *rel)
+            if var not in env and os.path.isdir(d):
+                env[var] = d
+        return env
+
+    @staticmethod
     def _ensure_fields(gpkg_path, layer_name, feedback):
         """
         Backfill any column this species layer is missing, then stamp `species`
@@ -306,10 +339,13 @@ class PropagateSpeciesAlgorithm(QgsProcessingAlgorithm):
         feedback.pushInfo("Running: %s" % " ".join(cmd))
         feedback.pushInfo("cwd: %s" % repo_root)
 
-        proc = subprocess.Popen(
-            cmd, cwd=repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
-        )
+        popen_kw = dict(cwd=repo_root, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, bufsize=1,
+                        encoding="utf-8", errors="replace",
+                        env=self._child_env(venv_python))
+        if os.name == "nt":                     # no console window popping up
+            popen_kw["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        proc = subprocess.Popen(cmd, **popen_kw)
         for line in proc.stdout:
             if feedback.isCanceled():
                 proc.terminate()

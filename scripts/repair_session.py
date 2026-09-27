@@ -113,6 +113,13 @@ def main():
         except Exception:
             pass
         qgis.utils._bunjilview_layer_hook = None
+    for sig, fn in (getattr(qgis.utils, '_bunjilview_raster_hooks', None) or []):
+        try:
+            sig.disconnect(fn)
+            removed += 1
+        except Exception:
+            pass
+    qgis.utils._bunjilview_raster_hooks = None
     for n in ('_bv_chk', '_bv_nxt', '_bv_snap', '_bv_base', '_bv_report',
               '_bv_cleanup', '_bv_instrumented'):
         if hasattr(qgis.utils, n):

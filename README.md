@@ -2,11 +2,6 @@
 
 Vegetation mapping of alpine bogs (Kosciuszko) from RGB drone orthomosaics.
 
-A full data-flow diagram of the system, in Vietnamese, is at
-[`docs/diagrams/bunjilview-he-thong.html`](docs/diagrams/bunjilview-he-thong.html).
-Open it in a browser: light/dark themes, search, click a node to trace its
-path, and three guided views by stage.
-
 Three ways to get labelled polygons out of an orthomosaic, sharing one code
 base:
 
@@ -22,8 +17,101 @@ back in QGIS.
 
 ---
 
+## System overview
+
+Every step reads what the previous one wrote. The diagram below is the whole
+system; the table underneath names the command, the input and the output of
+each step.
+
+```mermaid
+flowchart TB
+  subgraph P1["1. Source data"]
+    ortho[("Drone orthomosaic<br/>data/raw/SITE.tif")]
+  end
+
+  subgraph P2["2. Preprocess"]
+    tiles["Cut tiles<br/>tiling.py"]
+    feats["DINOv2 features<br/>features.py"]
+  end
+
+  subgraph P3["3. Caches and candidates"]
+    autopipe["Automated branch<br/>k-means + pseudo-label"]
+    fcache[("Flat feature cache<br/>_patch_feats.npy")]
+    samcache[("SAM mask library<br/>sam_masks.gpkg")]
+  end
+
+  subgraph P4["4. Labelling"]
+    qgis["Draw seed in QGIS<br/>Geo-SAM"]
+    gpkg[("Label GeoPackage<br/>one layer per species")]
+    propagate["Propagate from seed<br/>propagate.py"]
+  end
+
+  subgraph P5["5. Train and predict"]
+    labels[("Label raster<br/>SITE_labels.tif")]
+    train["Train<br/>train.py"]
+    infer["Predict new site<br/>infer.py"]
+  end
+
+  ortho -->|ortho .tif| tiles
+  tiles -->|image tiles| feats
+  feats -->|features| fcache
+  feats -.->|features| autopipe
+  ortho -->|ortho for SAM| samcache
+  fcache -->|mask vectors| samcache
+  fcache -->|feature cache| propagate
+  samcache -->|SAM masks| propagate
+  qgis -->|seed polygon| gpkg
+  gpkg -->|seeds| propagate
+  propagate -->|auto polygons| gpkg
+  gpkg -->|rasterize| labels
+  autopipe -.->|pseudo-label| labels
+  labels -->|mask tiles| train
+  train -->|checkpoint| infer
+```
+
+Solid arrows are the interactive route this project uses day to day. The two
+dashed arrows are the fully automated alternative, which skips drawing
+entirely and asks a human to name about 40 clusters instead. Both branches end
+in the same label raster, so they share `train.py` and `infer.py`.
+
+### Step by step
+
+| # | Step | Command | Input | Output |
+|---|------|---------|-------|--------|
+| 1 | Cut tiles | `python src/tiling.py --config config.yaml --ortho data/raw/<site>.tif` | the orthomosaic | `data/tiles/<site>/images/`, 512x512 with 64 px overlap |
+| 2 | Extract features | `python src/features.py --config config.yaml --site <site>` | image tiles | `data/features/<site>/*.npy`, 768 dims per patch |
+| 3 | Build the feature cache | `python src/propagate.py --config config.yaml --site <site> --build-feature-cache` | `data/features/<site>/*.npy` | `_patch_feats.npy` plus its index files, L2 normalised |
+| 4 | Build the SAM candidates | `python src/propagate.py --config config.yaml --site <site> --build-sam-cache` | the orthomosaic and the feature cache | `sam_candidates/sam_masks.gpkg` and `sam_feats.npy` |
+| 5 | Create the species layers | `python scripts/init_labels_gpkg.py --config config.yaml --site <site>` | the `classes` block of `config.yaml` | `data/labels/<site>/<site>.gpkg`, one layer per species |
+| 6 | Start a QGIS session | `exec(open(REPO + '/scripts/repair_session.py').read())` | `BV_REPO` and `BV_SITE` | patched plugin, layers loaded and coloured, `RESULT: 6/6 PASS` |
+| 7 | Draw a seed | Geo-SAM: **FG**, click, **S** | the orthomosaic on the canvas | one polygon in the species layer, `source` empty |
+| 8 | Propagate | Processing Toolbox, **Propagate species from seed** | the seed plus both caches | polygons in the same layer with `source='auto'` |
+| 9 | Clean up | `exec(open(REPO + '/qgis/clean_polygons.py').read())` | the wrong polygons | a layer holding only polygons you accept |
+| 10 | Rasterise | `python src/propagate.py --config config.yaml --site <site> --rasterize` | every polygon of every species | `data/pseudo/<site>/<site>_labels.tif`, 1:1 with the ortho |
+| 11 | Cut mask tiles | `python src/tiling.py --config config.yaml --ortho data/raw/<site>.tif --mask data/pseudo/<site>/<site>_labels.tif` | the label raster | `data/tiles/<site>/masks/` |
+| 12 | Train | `python src/train.py --config config.yaml --site <site>` | image tiles and mask tiles | `checkpoints/<site>/<model>/best.pt` |
+| 13 | Predict | `python src/infer.py --config config.yaml --ortho <new>.tif --checkpoint <best>.pt --out <out>.tif` | a new orthomosaic and a checkpoint | a classified GeoTIFF you open in QGIS |
+
+Steps 1 to 5 run once per site. Steps 7 to 9 repeat for each species, and
+running step 8 again after a cleanup tightens the result. Steps 10 to 13 run
+when the labelling is done.
+
+The automated branch replaces steps 6 to 9 with
+`python src/cluster.py` (features to 40 clusters), `python src/naming.py`
+(a montage plus a CSV a human fills in) and `python src/pseudolabel.py`
+(cluster maps plus the mapping to a label raster). Guide 3 covers it.
+
+An interactive version of the same diagram, with light and dark themes,
+search, click to trace a path, and three guided views, is at
+[`docs/diagrams/bunjilview-system.html`](docs/diagrams/bunjilview-system.html).
+Open it in a browser. It was generated from
+[`docs/diagrams/bunjilview-system.dataflow.json`](docs/diagrams/bunjilview-system.dataflow.json).
+
+---
+
 ## Contents
 
+- [System overview](#system-overview)
 1. [Install](#1-install)
 2. [Set up a site](#2-set-up-a-site)
 3. [Run: interactive labelling and propagation](#3-run-interactive-labelling-and-propagation)
@@ -79,10 +167,49 @@ pip install -r requirements.txt
 
 ```bash
 python3.11 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+**venv (Windows)**
+
+Windows has no `python3.11` command; that naming is a macOS/Linux convention.
+Use the `py` launcher instead, which ships with the official python.org
+installer:
+
+```bat
+py -3.11 -m venv .venv
+.venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+If `py -3.11` is not recognized, run `py -0` to list the Python versions
+Windows can see. An empty list, or no `py` at all, usually means Python 3.11
+was installed without the launcher, or this terminal was opened before the
+install finished, in which case a new terminal window picks it up. As a
+fallback, call that Python version by its full path instead of `py -3.11`:
+
+```bat
+"C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe" -m venv .venv
+```
+
+**If activation is blocked** (a locked-down company machine where PowerShell's
+execution policy disables running `.venv\Scripts\Activate.ps1`): activation
+is only a shortcut that adjusts `PATH` for the current terminal, not a
+requirement for the environment to work. Skip it entirely and call the
+environment's own interpreter directly, by path, for every command:
+
+```bat
+.venv\Scripts\python.exe -m pip install --upgrade pip
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+This applies to every `python ...` command later in this README on such a
+machine: replace `python` with `.venv\Scripts\python.exe` (or `.venv/bin/python`
+on macOS/Linux). It also means you never need admin rights or a PATH change
+to use this environment.
 
 If GDAL fails to build on macOS:
 
@@ -446,6 +573,14 @@ build again.
 Step 2.2 has not run, or it wrote to a different site name. The site name is
 the ortho file name without the extension, and `data/tiles/<site>/images/`
 must exist.
+
+**"wrapped C/C++ object of type QgsRasterLayer has been deleted" when pressing FG**
+Geo-SAM was still holding an orthomosaic layer that had been removed from the
+project. The session script now handles this three ways: it drops the
+plugin's reference the moment the ortho is removed, rebinds automatically when
+an ortho with the site name is added back, and rebuilds the image source when
+you click a species layer. If you still see it, re-run `repair_session.py`,
+which reloads the plugin and rebinds from scratch.
 
 **The polygon disappears when I press S.**
 The patches are not applied. Run `repair_session.py` and check it reports

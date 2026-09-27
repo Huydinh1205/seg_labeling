@@ -629,11 +629,14 @@ def propagate_species(cfg: dict, site: str, gpkg_path: str, species: str,
         raise ValueError(f"SAM cache mismatch: {len(sam_polys)} polys vs "
                          f"{len(sam_feats)} feats - rebuild --build-sam-cache")
 
-    # --- one layer per site; species is an attribute (matches Geo-SAM's normal
-    #     "draw -> type species in the attribute form" flow, no per-species layer) ---
+    # --- one layer per species: the layer NAME is the species, so the seeds
+    #     are simply the polygons of that layer whose `source` is allowed ---
     seed_sources = set(p["prototype"]["seed_sources"])
     species_recs = read_layer_polygons(gpkg_path, species)
-    seeds = [r["geom"] for r in species_recs if r["source"] in seed_sources]
+    # `source` is NULL on a polygon Geo-SAM drew, but an empty string also shows
+    # up (edited by hand, exported and re-imported). Treat both as "hand-drawn".
+    seeds = [r["geom"] for r in species_recs
+             if (r["source"] or None) in seed_sources]
     if not seeds:
         raise ValueError(
             f"Layer '{species}' of {gpkg_path} has no polygon to learn from. "

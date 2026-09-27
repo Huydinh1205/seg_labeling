@@ -1,6 +1,7 @@
 # Core geospatial
 rasterio>=1.3.0
 shapely>=2.0.0
+geopandas>=0.14.0   # scripts/init_labels_gpkg.py, scripts/make_test_fixtures.py
 pyproj>=3.5.0
 gdal>=3.6.0
 
