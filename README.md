@@ -381,6 +381,33 @@ the repo's `qgis/` folder -> OK -> restart QGIS.
 profile, and the stale copy then shadows the one in the repo. Every edit you
 make afterwards appears to do nothing, which costs an afternoon to work out.
 
+### 2.8 Run steps 2.2-2.6 in one go (Windows)
+
+`run_pipeline.bat`, in the repo root, chains 2.2 through 2.6 into a single
+double-clickable script, so a large site can run unattended (overnight, for
+example) instead of someone sitting there to launch each step by hand.
+
+Open it in Notepad and edit the two lines near the top:
+
+```bat
+set SITE=your_site_name
+set ORTHO=C:\path\to\your\image.tif
+```
+
+`ORTHO` is the full path to the orthomosaic wherever it actually lives on the
+machine, it does not need to be copied into `data\raw` first. Save the file,
+then double-click it to run.
+
+Each step runs through PowerShell so progress prints live to the window while
+it works, and is also appended to a `run_<site>.log` file next to the script
+for checking later. It stops at the first step that fails instead of
+continuing on broken input. This still works on a machine where PowerShell's
+execution policy blocks running `.ps1` scripts, because it never runs a
+script file, only single PowerShell commands passed with `-Command`.
+
+When it finishes, `data/labels/<site>/<site>.gpkg` is ready and section 3
+below can start.
+
 ---
 
 ## 3. Run: interactive labelling and propagation
