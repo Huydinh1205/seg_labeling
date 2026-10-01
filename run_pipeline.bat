@@ -37,6 +37,13 @@ REM Run from the folder this .bat file is in (must be the repo
 REM root, alongside config.yaml, src\ and scripts\)
 cd /d "%~dp0"
 
+REM Strip any double quotes typed around SITE or ORTHO above. Writing
+REM set ORTHO="C:\path with spaces\image.tif" is a natural habit, but
+REM every command below already adds its own quotes, and doubled
+REM quotes break any path that contains a space.
+set SITE=%SITE:"=%
+set ORTHO=%ORTHO:"=%
+
 set PY=.venv\Scripts\python.exe
 set LOG=run_%SITE%.log
 set RAW=data\raw\%SITE%.tif
@@ -67,12 +74,25 @@ REM (not "normal"), so python.exe, started from inside that
 REM PowerShell, inherits the same low priority automatically.
 
 if not exist "%RAW%" (
+    if not exist "%ORTHO%" (
+        echo.
+        echo Cannot find the image set in ORTHO: "%ORTHO%"
+        echo Check the path is right and that the drive it is on is connected.
+        echo Cannot find ORTHO: "%ORTHO%" >> "%LOG%"
+        goto :error
+    )
     echo.
     echo [0/5] Copying the orthomosaic into data\raw\ ^(propagate.py always
-    echo       looks for it there, it has no option to point elsewhere^)...
+    echo       looks for it there, it has no option to point elsewhere^).
+    echo       A large image on a network drive can take several minutes,
+    echo       with no progress shown while it copies...
     if not exist "data\raw" mkdir "data\raw"
-    copy /Y "%ORTHO%" "%RAW%" >> "%LOG%" 2>&1
-    if errorlevel 1 goto :error
+    copy /Y "%ORTHO%" "%RAW%"
+    if errorlevel 1 (
+        echo Copy failed: "%ORTHO%" to "%RAW%" >> "%LOG%"
+        if exist "%RAW%" del "%RAW%"
+        goto :error
+    )
 ) else (
     echo.
     echo [0/5] %RAW% already exists, skipping the copy.

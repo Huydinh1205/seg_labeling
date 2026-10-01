@@ -99,10 +99,21 @@ REM propagate.py always looks for the orthomosaic at data\raw\<site>.tif,
 REM it has no option to point elsewhere, so copy it there first unless
 REM it is already in place (skips re-copying on a rerun).
 if not exist "%RAW%" (
-    echo [0/5] Copying the orthomosaic into data\raw\...
+    if not exist "%ORTHO%" (
+        echo Cannot find the image for %SITE%: "%ORTHO%"
+        echo Check the path in %MANIFEST% and that its drive is connected.
+        echo Cannot find ORTHO: "%ORTHO%" >> "%LOG%"
+        goto :site_failed
+    )
+    echo [0/5] Copying the orthomosaic into data\raw\ ^(can take several
+    echo       minutes for a large image on a network drive^)...
     if not exist "data\raw" mkdir "data\raw"
-    copy /Y "%ORTHO%" "%RAW%" >> "%LOG%" 2>&1
-    if errorlevel 1 goto :site_failed
+    copy /Y "%ORTHO%" "%RAW%"
+    if errorlevel 1 (
+        echo Copy failed: "%ORTHO%" to "%RAW%" >> "%LOG%"
+        if exist "%RAW%" del "%RAW%"
+        goto :site_failed
+    )
 ) else (
     echo [0/5] %RAW% already exists, skipping the copy.
 )
