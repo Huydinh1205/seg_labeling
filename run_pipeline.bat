@@ -5,7 +5,10 @@ REM ============================================================
 REM  Edit the lines below before running:
 REM  - SITE: the site name (any name you like, used for folder/file naming)
 REM  - ORTHO: the FULL path to the .tif image, anywhere on this
-REM           machine, it does not have to be under data\raw
+REM           machine, it does not have to already be under
+REM           data\raw, the script copies it to data\raw\<site>.tif
+REM           itself (propagate.py always looks for it there and
+REM           has no option to point elsewhere)
 REM  - PRIORITY: how much this script competes with other work on
 REM           this machine for CPU time. Three choices:
 REM             low         - never competes. Only uses CPU that
@@ -36,6 +39,7 @@ cd /d "%~dp0"
 
 set PY=.venv\Scripts\python.exe
 set LOG=run_%SITE%.log
+set RAW=data\raw\%SITE%.tif
 
 echo ================================================ > "%LOG%"
 echo Pipeline for site: %SITE% >> "%LOG%"
@@ -44,11 +48,16 @@ echo Priority: %PRIORITY% >> "%LOG%"
 echo Started at: %date% %time% >> "%LOG%"
 echo ================================================ >> "%LOG%"
 
-REM Each step runs through PowerShell + Tee-Object, which prints
-REM to the console live while it runs (so progress, including any
-REM progress bar a script prints, is visible as it happens) and
-REM also appends the same output to the log file. This never runs
-REM a .ps1 script file, so it is not blocked by a company machine's
+REM Each step runs through PowerShell, which prints to the console
+REM live while it runs (so progress, including any progress bar a
+REM script prints, is visible as it happens) and also appends the
+REM same output to the log file. The append goes through
+REM Add-Content -Encoding ascii rather than Tee-Object's own file
+REM write, because Tee-Object defaults to UTF-16 on Windows
+REM PowerShell, which does not match the plain ASCII this script
+REM itself writes above, and a log file mixing both encodings opens
+REM as garbled or looks empty in Notepad. This never runs a .ps1
+REM script file, so it is not blocked by a company machine's
 REM PowerShell execution policy.
 REM
 REM "start ... /%PRIORITY%" launches PowerShell itself at that
@@ -57,29 +66,41 @@ REM priority by default when that creator is "low" or "belownormal"
 REM (not "normal"), so python.exe, started from inside that
 REM PowerShell, inherits the same low priority automatically.
 
+if not exist "%RAW%" (
+    echo.
+    echo [0/5] Copying the orthomosaic into data\raw\ ^(propagate.py always
+    echo       looks for it there, it has no option to point elsewhere^)...
+    if not exist "data\raw" mkdir "data\raw"
+    copy /Y "%ORTHO%" "%RAW%" >> "%LOG%" 2>&1
+    if errorlevel 1 goto :error
+) else (
+    echo.
+    echo [0/5] %RAW% already exists, skipping the copy.
+)
+
 echo.
 echo [1/5] (roughly 0%% - 10%%) Cutting the image into tiles...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%ORTHO%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%RAW%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.
 echo [2/5] (roughly 10%% - 35%%) Extracting DINOv2 features...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\features.py --config config.yaml --site '%SITE%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\features.py --config config.yaml --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.
 echo [3/5] (roughly 35%% - 40%%) Building the feature cache...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.
 echo [4/5] (roughly 40%% - 95%%, the slowest step) Building the SAM candidate cache...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.
 echo [5/5] (roughly 95%% - 100%%) Creating the species label layers...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.

@@ -395,15 +395,22 @@ set ORTHO=C:\path\to\your\image.tif
 ```
 
 `ORTHO` is the full path to the orthomosaic wherever it actually lives on the
-machine, it does not need to be copied into `data\raw` first. Save the file,
-then double-click it to run.
+machine, it does not need to already be under `data\raw`. The script copies
+it to `data\raw\<site>.tif` itself as its first action (`propagate.py`
+always looks for the orthomosaic there and has no option to point it
+elsewhere), skipping the copy on a rerun if that file is already in place.
+Save the file, then double-click it to run.
 
 Each step runs through PowerShell so progress prints live to the window while
 it works, and is also appended to a `run_<site>.log` file next to the script
-for checking later. It stops at the first step that fails instead of
-continuing on broken input. This still works on a machine where PowerShell's
-execution policy blocks running `.ps1` scripts, because it never runs a
-script file, only single PowerShell commands passed with `-Command`.
+for checking later. The append uses `Add-Content -Encoding ascii` rather than
+piping through `Tee-Object`'s own file write, because `Tee-Object` defaults
+to UTF-16 on Windows PowerShell, which does not match this script's own
+plain-ASCII header lines, and a log mixing both encodings opens as garbled
+text, or looks empty, in Notepad. It stops at the first step that fails
+instead of continuing on broken input. This still works on a machine where
+PowerShell's execution policy blocks running `.ps1` scripts, because it never
+runs a script file, only single PowerShell commands passed with `-Command`.
 
 When it finishes, `data/labels/<site>/<site>.gpkg` is ready and section 3
 below can start.
@@ -423,8 +430,9 @@ site2,D:\Projects\walpolla\walpolla_ortho.tif
 
 Lines starting with `#` are ignored. Double-click `run_pipeline_batch.bat`.
 It runs 2.2 through 2.6 for each site in turn, the same way
-`run_pipeline.bat` does for one. Unlike the single-site script, one site
-failing does not stop the batch: the remaining sites still run, so an
+`run_pipeline.bat` does for one, including copying each image into
+`data\raw\<site>.tif` first (see 2.8). Unlike the single-site script, one
+site failing does not stop the batch: the remaining sites still run, so an
 overnight batch of ten sites is not lost over one bad file. Each site still
 gets its own `run_<site>.log`, and a short pass/fail line per site is also
 written to `run_batch_summary.log`.
