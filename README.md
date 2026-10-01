@@ -429,6 +429,36 @@ overnight batch of ten sites is not lost over one bad file. Each site still
 gets its own `run_<site>.log`, and a short pass/fail line per site is also
 written to `run_batch_summary.log`.
 
+### 2.10 Running on a CPU-only machine without starving other work
+
+`config.yaml -> dino.device` used to be hardcoded to `"mps"`, which only
+exists on Apple Silicon and crashes with a `RuntimeError` on any other
+machine. It is now `null`, which autodetects per machine (CUDA, then MPS,
+then CPU) the same way `propagate.sam.device` already did. Nothing to change
+on your end, just don't hardcode a device back into this file.
+
+On CPU with no GPU, the slow steps are 2.3 (DINOv2) and 2.5 (SAM). Two knobs
+trade speed for quality if you want this to run faster regardless of
+anything else on the machine:
+
+- `propagate.sam.points_per_side` ships at `8` for a quick first run; raising
+  it to `32` gives finer masks but is noticeably slower on CPU. Leave it at
+  `8` while you are still setting things up.
+- `propagate.sam.backend` ships at `vit_b`, the fastest SAM variant. `vit_l`
+  and `vit_h` are slower and more accurate; only move up if `vit_b`'s masks
+  are not good enough.
+
+Both `run_pipeline.bat` and `run_pipeline_batch.bat` default to
+`set PRIORITY=low`, which runs every step at Windows's Idle priority class.
+This does the opposite of making it faster: it means the pipeline only gets
+CPU time that nothing else on the machine wants, so it slows down or nearly
+pauses whenever something else is busy, and speeds back up once that other
+work finishes. That trade is the point, it is how the pipeline avoids
+competing with other work on a shared company machine. If `low` leaves it
+barely progressing because the machine is busy most of the time, change the
+line to `set PRIORITY=belownormal` instead, which still yields to other work
+but gets a larger share of CPU time while doing so.
+
 ---
 
 ## 3. Run: interactive labelling and propagation

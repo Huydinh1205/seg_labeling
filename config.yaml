@@ -43,7 +43,7 @@ dino:
   model: "facebook/dinov2-base"   # or dinov2-large for better features
   patch_size: 14                  # pixels per patch
   batch_size: 4                   # tiles per forward pass
-  device: "mps"                   # "cuda" on NVIDIA, "mps" on Apple Silicon, "cpu" otherwise
+  device: null                    # null -> autodetect cuda -> mps -> cpu per machine
   upsample_mode: "bilinear"       # interpolation for feature upsampling
 
 # ============================================================

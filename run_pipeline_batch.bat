@@ -8,8 +8,15 @@ REM
 REM  List every site in sites.csv, next to this script, one line
 REM  each: site_name,C:\full\path\to\image.tif
 REM  See sites.csv.example for a template and the exact format.
+REM
+REM  PRIORITY: how much this script yields to other work on this
+REM  machine. "low" (default) means it only uses CPU other tasks
+REM  are not using, so it runs SLOWER whenever something else is
+REM  busy, but never competes with it. Use "belownormal" instead
+REM  if "low" makes it barely progress while other work is running.
 REM ============================================================
 set MANIFEST=sites.csv
+set PRIORITY=low
 
 REM Run from the folder this .bat file is in (must be the repo
 REM root, alongside config.yaml, src\ and scripts\)
@@ -29,12 +36,19 @@ set SUMMARY_LOG=run_batch_summary.log
 echo ================================================ > "%SUMMARY_LOG%"
 echo Batch run started at: %date% %time% >> "%SUMMARY_LOG%"
 echo Manifest: %MANIFEST% >> "%SUMMARY_LOG%"
+echo Priority: %PRIORITY% >> "%SUMMARY_LOG%"
 echo ================================================ >> "%SUMMARY_LOG%"
 
 REM One site failing does not stop the batch, the remaining sites
 REM still run. Each site's own detailed log is run_<site>.log, same
 REM as run_pipeline.bat; this script also writes a short summary
 REM line per site to run_batch_summary.log.
+REM
+REM "start ... /%PRIORITY%" launches PowerShell itself at that
+REM priority class; Windows gives a new process its creator's
+REM priority by default when that creator is "low" or "belownormal"
+REM (not "normal"), so python.exe, started from inside that
+REM PowerShell, inherits the same low priority automatically.
 
 for /f "usebackq tokens=1,2 delims=," %%A in ("%MANIFEST%") do (
     set "LINE=%%A"
@@ -69,23 +83,23 @@ echo Started at: %date% %time% >> "%LOG%"
 echo ================================================ >> "%LOG%"
 
 echo [1/5] Cutting the image into tiles...
-powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%ORTHO%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%ORTHO%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [2/5] Extracting DINOv2 features...
-powershell -NoProfile -Command "& '%PY%' src\features.py --config config.yaml --site '%SITE%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\features.py --config config.yaml --site '%SITE%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [3/5] Building the feature cache...
-powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [4/5] Building the SAM candidate cache (the slowest step)...
-powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [5/5] Creating the species label layers...
-powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo   -^> done
