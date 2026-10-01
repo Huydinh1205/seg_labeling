@@ -77,3 +77,11 @@ desktop.ini
 .env
 .env.*
 !.env.example
+
+# ---------------------------------------------------------------- pipeline run output
+# Logs written by run_pipeline.bat / run_pipeline_batch.bat, and the
+# per-machine site manifest (real file paths, not something to share).
+# Keep sites.csv.example tracked as the template.
+run_*.log
+run_batch_summary.log
+sites.csv

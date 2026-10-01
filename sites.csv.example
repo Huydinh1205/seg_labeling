@@ -1,0 +1,14 @@
+# Manifest for run_pipeline_batch.bat
+#
+# One line per site: site_name,C:\full\path\to\image.tif
+# - Lines starting with # are ignored.
+# - Blank lines are ignored.
+# - The image path does not need to be under data\raw, it can be
+#   anywhere on the machine.
+# - Do not use a comma inside the site name or the path.
+#
+# Copy this file to sites.csv (without .example) and edit it with
+# your real site names and image paths, then run run_pipeline_batch.bat.
+
+site1,C:\Drone Data\2026\site1_ortho.tif
+site2,D:\Projects\walpolla\walpolla_ortho.tif

@@ -408,6 +408,27 @@ script file, only single PowerShell commands passed with `-Command`.
 When it finishes, `data/labels/<site>/<site>.gpkg` is ready and section 3
 below can start.
 
+### 2.9 Run multiple sites in one go (Windows)
+
+For several orthomosaics processed unattended in one run, use
+`run_pipeline_batch.bat` instead of `run_pipeline.bat`.
+
+Copy `sites.csv.example` to `sites.csv`, in the repo root, and list one site
+per line:
+
+```
+site1,C:\Drone Data\2026\site1_ortho.tif
+site2,D:\Projects\walpolla\walpolla_ortho.tif
+```
+
+Lines starting with `#` are ignored. Double-click `run_pipeline_batch.bat`.
+It runs 2.2 through 2.6 for each site in turn, the same way
+`run_pipeline.bat` does for one. Unlike the single-site script, one site
+failing does not stop the batch: the remaining sites still run, so an
+overnight batch of ten sites is not lost over one bad file. Each site still
+gets its own `run_<site>.log`, and a short pass/fail line per site is also
+written to `run_batch_summary.log`.
+
 ---
 
 ## 3. Run: interactive labelling and propagation
