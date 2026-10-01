@@ -5,10 +5,9 @@ REM ============================================================
 REM  Edit the lines below before running:
 REM  - SITE: the site name (any name you like, used for folder/file naming)
 REM  - ORTHO: the FULL path to the .tif image, anywhere on this
-REM           machine, it does not have to already be under
-REM           data\raw, the script copies it to data\raw\<site>.tif
-REM           itself (propagate.py always looks for it there and
-REM           has no option to point elsewhere)
+REM           machine. It is read straight from there, nothing is
+REM           copied, and the QGIS session later finds it there too.
+REM           Quotes around the path are optional.
 REM  - PRIORITY: how much this script competes with other work on
 REM           this machine for CPU time. Three choices:
 REM             low         - never competes. Only uses CPU that
@@ -46,7 +45,6 @@ set ORTHO=%ORTHO:"=%
 
 set PY=.venv\Scripts\python.exe
 set LOG=run_%SITE%.log
-set RAW=data\raw\%SITE%.tif
 
 echo ================================================ > "%LOG%"
 echo Pipeline for site: %SITE% >> "%LOG%"
@@ -73,34 +71,17 @@ REM priority by default when that creator is "low" or "belownormal"
 REM (not "normal"), so python.exe, started from inside that
 REM PowerShell, inherits the same low priority automatically.
 
-if not exist "%RAW%" (
-    if not exist "%ORTHO%" (
-        echo.
-        echo Cannot find the image set in ORTHO: "%ORTHO%"
-        echo Check the path is right and that the drive it is on is connected.
-        echo Cannot find ORTHO: "%ORTHO%" >> "%LOG%"
-        goto :error
-    )
+if not exist "%ORTHO%" (
     echo.
-    echo [0/5] Copying the orthomosaic into data\raw\ ^(propagate.py always
-    echo       looks for it there, it has no option to point elsewhere^).
-    echo       A large image on a network drive can take several minutes,
-    echo       with no progress shown while it copies...
-    if not exist "data\raw" mkdir "data\raw"
-    copy /Y "%ORTHO%" "%RAW%"
-    if errorlevel 1 (
-        echo Copy failed: "%ORTHO%" to "%RAW%" >> "%LOG%"
-        if exist "%RAW%" del "%RAW%"
-        goto :error
-    )
-) else (
-    echo.
-    echo [0/5] %RAW% already exists, skipping the copy.
+    echo Cannot find the image set in ORTHO: "%ORTHO%"
+    echo Check the path is right and that the drive it is on is connected.
+    echo Cannot find ORTHO: "%ORTHO%" >> "%LOG%"
+    goto :error
 )
 
 echo.
 echo [1/5] (roughly 0%% - 10%%) Cutting the image into tiles...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%RAW%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%ORTHO%' --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.
@@ -110,17 +91,17 @@ if errorlevel 1 goto :error
 
 echo.
 echo [3/5] (roughly 35%% - 40%%) Building the feature cache...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.
 echo [4/5] (roughly 40%% - 95%%, the slowest step) Building the SAM candidate cache...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.
 echo [5/5] (roughly 95%% - 100%%) Creating the species label layers...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :error
 
 echo.

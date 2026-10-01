@@ -295,6 +295,14 @@ data/raw/<site>.tif
 The file name without the extension is the site name. `data/raw/test1.tif`
 means the site is `test1`.
 
+The image can also stay where it already is (another drive, for example):
+pass its path with `--ortho` to `tiling.py` (plus `--site <site>` if the file
+name differs from the site name), to `propagate.py --build-feature-cache` and
+`--build-sam-cache`, and to `init_labels_gpkg.py`. `propagate.py` records it
+in `data/labels/<site>/site.json`, so `--rasterize` and the QGIS session
+find it there without being told again. The Windows scripts in 2.8 and 2.9
+do all of this for you.
+
 ### 2.2 Cut the ortho into tiles
 
 ```bash
@@ -395,11 +403,12 @@ set ORTHO=C:\path\to\your\image.tif
 ```
 
 `ORTHO` is the full path to the orthomosaic wherever it actually lives on the
-machine, it does not need to already be under `data\raw`. The script copies
-it to `data\raw\<site>.tif` itself as its first action (`propagate.py`
-always looks for the orthomosaic there and has no option to point it
-elsewhere), skipping the copy on a rerun if that file is already in place.
-Save the file, then double-click it to run.
+machine, with or without quotes. It is read straight from there and never
+copied into `data\raw`, which matters for large images. Every step is given
+the path, and it is recorded in `data\labels\<site>\site.json` so the QGIS
+session (`repair_session.py`) loads the same file later. Keep the image at
+that path while you label the site. Save the file, then double-click it to
+run.
 
 Each step runs through PowerShell so progress prints live to the window while
 it works, and is also appended to a `run_<site>.log` file next to the script
@@ -430,8 +439,8 @@ site2,D:\Projects\walpolla\walpolla_ortho.tif
 
 Lines starting with `#` are ignored. Double-click `run_pipeline_batch.bat`.
 It runs 2.2 through 2.6 for each site in turn, the same way
-`run_pipeline.bat` does for one, including copying each image into
-`data\raw\<site>.tif` first (see 2.8). Unlike the single-site script, one
+`run_pipeline.bat` does for one, reading each image straight from the path
+in `sites.csv` (see 2.8). Unlike the single-site script, one
 site failing does not stop the batch: the remaining sites still run, so an
 overnight batch of ten sites is not lost over one bad file. Each site still
 gets its own `run_<site>.log`, and a short pass/fail line per site is also

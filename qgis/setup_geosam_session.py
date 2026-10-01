@@ -413,7 +413,18 @@ def setup(repo=REPO, site=SITE, species=SPECIES, verbose=True):
     say = (lambda m: print(m)) if verbose else (lambda m: None)
     proj = QgsProject.instance()
     gpkg = os.path.join(repo, 'data', 'labels', site, site + '.gpkg')
+    # Orthomosaic: the path the pipeline recorded in site.json (it can stay
+    # wherever it already is), else the default data/raw/<site>.tif.
     ortho = os.path.join(repo, 'data', 'raw', site + '.tif')
+    _sj = os.path.join(repo, 'data', 'labels', site, 'site.json')
+    if os.path.isfile(_sj):
+        try:
+            import json as _json
+            _rec = _json.load(open(_sj)).get('ortho')
+            if _rec and os.path.isfile(_rec):
+                ortho = _rec
+        except Exception:
+            pass
     if not os.path.isfile(gpkg):
         raise RuntimeError('%s not found. Run scripts/init_labels_gpkg.py first.'
                            % gpkg)

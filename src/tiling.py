@@ -212,12 +212,15 @@ def main():
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--ortho", required=True, help="Path to input orthomosaic GeoTIFF")
     parser.add_argument("--mask", default=None, help="Path to label mask GeoTIFF (optional)")
+    parser.add_argument("--site", default=None,
+                        help="Site name for the tiles folder (default: the ortho filename "
+                             "without .tif). Needed when the image keeps its own file name.")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
 
-    # Site name = the stem of the ortho filename
-    site_name = Path(args.ortho).stem
+    # Site name = --site, else the stem of the ortho filename
+    site_name = args.site or Path(args.ortho).stem
     tiles_out = os.path.join(cfg["paths"]["tiles_dir"], site_name, "images")
     masks_out = None
 

@@ -112,6 +112,24 @@ def site_labels_dir(cfg: dict, site: str) -> Path:
     return Path(prop_cfg(cfg)["labels_dir"]) / site
 
 
+def resolve_ortho(cfg: dict, site: str, ortho: str = None) -> str:
+    """Where this site's orthomosaic lives, in order of preference:
+    the --ortho argument, the path recorded in site.json by an earlier
+    step, then the default <raw_dir>/<site>.tif. Lets the image stay
+    wherever it already is instead of being copied into data/raw."""
+    if ortho:
+        return os.path.abspath(ortho)
+    sj = site_labels_dir(cfg, site) / "site.json"
+    if sj.exists():
+        try:
+            rec = json.load(open(sj)).get("ortho")
+            if rec and os.path.isfile(rec):
+                return rec
+        except Exception:
+            pass
+    return os.path.join(cfg["paths"]["raw_dir"], f"{site}.tif")
+
+
 # ============================================================
 # Feature cache
 # ============================================================
@@ -514,7 +532,7 @@ def featurize_polygons(polys: list, cache: dict, tiles_meta: list) -> np.ndarray
 
 
 def build_sam_cache(cfg: dict, site: str, from_vector: str = None,
-                    rebuild: bool = False) -> dict:
+                    rebuild: bool = False, ortho: str = None) -> dict:
     p = prop_cfg(cfg)
     labels_dir = site_labels_dir(cfg, site)
     cand_dir = labels_dir / "sam_candidates"
@@ -531,7 +549,7 @@ def build_sam_cache(cfg: dict, site: str, from_vector: str = None,
     tiles_dir = os.path.join(cfg["paths"]["tiles_dir"], site, "images")
     tiles_meta = _tiles_meta(cache, tiles_dir)
 
-    ortho_path = os.path.join(cfg["paths"]["raw_dir"], f"{site}.tif")
+    ortho_path = resolve_ortho(cfg, site, ortho)
 
     if from_vector:
         recs = []
@@ -570,7 +588,7 @@ def build_sam_cache(cfg: dict, site: str, from_vector: str = None,
                    "areas_m2": [float(poly.area) for poly in polys],
                    "built": _now()}, f, indent=2)
 
-    _write_site_json(cfg, site)
+    _write_site_json(cfg, site, ortho=ortho_path)
     print(f"SAM cache: {n} masks x {sam_feats.shape[1]} dim -> {cand_dir}")
     return {"masks_gpkg": str(masks_gpkg), "feats_npy": str(feats_npy)}
 
@@ -711,10 +729,10 @@ def propagate_species(cfg: dict, site: str, gpkg_path: str, species: str,
 # ============================================================
 
 def rasterize_labels(cfg: dict, site: str, gpkg_path: str, out_tif: str,
-                     overlap_priority: str = "score") -> str:
+                     overlap_priority: str = "score", ortho: str = None) -> str:
     classes = cfg["classes"]                      # {id: name}
     name_to_id = {v: int(k) for k, v in classes.items()}
-    ortho_path = os.path.join(cfg["paths"]["raw_dir"], f"{site}.tif")
+    ortho_path = resolve_ortho(cfg, site, ortho)
 
     with rasterio.open(ortho_path) as src:
         H, W = src.height, src.width
@@ -798,16 +816,25 @@ def _now() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
 
 
-def _write_site_json(cfg: dict, site: str) -> None:
+def _write_site_json(cfg: dict, site: str, ortho: str = None) -> None:
     labels_dir = site_labels_dir(cfg, site)
     labels_dir.mkdir(parents=True, exist_ok=True)
-    info = {
+    sj = labels_dir / "site.json"
+    info = {}
+    if sj.exists():                     # keep keys earlier steps recorded
+        try:
+            info = json.load(open(sj))
+        except Exception:
+            info = {}
+    info.update({
         "site": site,
         "repo_root": str(Path.cwd()),
         "venv_python": sys.executable,
         "gpkg": str(labels_dir / f"{site}.gpkg"),
-    }
-    with open(labels_dir / "site.json", "w") as f:
+    })
+    if ortho:
+        info["ortho"] = os.path.abspath(ortho)
+    with open(sj, "w") as f:
         json.dump(info, f, indent=2)
 
 
@@ -824,6 +851,9 @@ def main():
     ap.add_argument("--from-vector", default=None,
                     help="With --build-sam-cache: featurise this polygon file instead of running SAM")
     ap.add_argument("--rebuild", action="store_true", help="Force cache rebuild")
+    ap.add_argument("--ortho", default=None,
+                    help="Orthomosaic path, if not at <raw_dir>/<site>.tif. Recorded in "
+                         "site.json, so later steps and the QGIS session find it too")
     ap.add_argument("--species", default=None,
                     help="Species to propagate (defaults to the layer name)")
     ap.add_argument("--layer", default=None, help="Path to <site>.gpkg (default: data/labels/<site>/<site>.gpkg)")
@@ -846,11 +876,12 @@ def main():
             out_dir=str(labels_dir),
             rebuild=args.rebuild,
         )
-        _write_site_json(cfg, args.site)
+        _write_site_json(cfg, args.site, ortho=args.ortho)
         did = True
 
     if args.build_sam_cache:
-        build_sam_cache(cfg, args.site, from_vector=args.from_vector, rebuild=args.rebuild)
+        build_sam_cache(cfg, args.site, from_vector=args.from_vector, rebuild=args.rebuild,
+                        ortho=args.ortho)
         did = True
 
     if args.species:
@@ -862,7 +893,8 @@ def main():
         out = args.out or os.path.join(cfg["paths"]["pseudo_dir"], args.site,
                                        f"{args.site}_labels.tif")
         rasterize_labels(cfg, args.site, gpkg, out,
-                         overlap_priority=prop_cfg(cfg)["rasterize"]["overlap_priority"])
+                         overlap_priority=prop_cfg(cfg)["rasterize"]["overlap_priority"],
+                         ortho=args.ortho)
         did = True
 
     if not did:

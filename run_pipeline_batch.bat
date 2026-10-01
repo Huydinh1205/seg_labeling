@@ -8,10 +8,7 @@ REM
 REM  List every site in sites.csv, next to this script, one line
 REM  each: site_name,C:\full\path\to\image.tif
 REM  See sites.csv.example for a template and the exact format.
-REM  The image path does not have to already be under data\raw, this
-REM  script copies each one to data\raw\<site>.tif itself
-REM  (propagate.py always looks for it there and has no option to
-REM  point elsewhere).
+REM  Each image is read straight from that path, nothing is copied.
 REM
 REM  PRIORITY: how much this script competes with other work on
 REM  this machine for CPU time. Three choices:
@@ -83,7 +80,6 @@ goto :end
 set "SITE=%~1"
 set "ORTHO=%~2"
 set "LOG=run_%SITE%.log"
-set "RAW=data\raw\%SITE%.tif"
 
 echo.
 echo ================================================
@@ -95,31 +91,15 @@ echo Source image: %ORTHO% >> "%LOG%"
 echo Started at: %date% %time% >> "%LOG%"
 echo ================================================ >> "%LOG%"
 
-REM propagate.py always looks for the orthomosaic at data\raw\<site>.tif,
-REM it has no option to point elsewhere, so copy it there first unless
-REM it is already in place (skips re-copying on a rerun).
-if not exist "%RAW%" (
-    if not exist "%ORTHO%" (
-        echo Cannot find the image for %SITE%: "%ORTHO%"
-        echo Check the path in %MANIFEST% and that its drive is connected.
-        echo Cannot find ORTHO: "%ORTHO%" >> "%LOG%"
-        goto :site_failed
-    )
-    echo [0/5] Copying the orthomosaic into data\raw\ ^(can take several
-    echo       minutes for a large image on a network drive^)...
-    if not exist "data\raw" mkdir "data\raw"
-    copy /Y "%ORTHO%" "%RAW%"
-    if errorlevel 1 (
-        echo Copy failed: "%ORTHO%" to "%RAW%" >> "%LOG%"
-        if exist "%RAW%" del "%RAW%"
-        goto :site_failed
-    )
-) else (
-    echo [0/5] %RAW% already exists, skipping the copy.
+if not exist "%ORTHO%" (
+    echo Cannot find the image for %SITE%: "%ORTHO%"
+    echo Check the path in %MANIFEST% and that its drive is connected.
+    echo Cannot find ORTHO: "%ORTHO%" >> "%LOG%"
+    goto :site_failed
 )
 
 echo [1/5] Cutting the image into tiles...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%RAW%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%ORTHO%' --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [2/5] Extracting DINOv2 features...
@@ -127,15 +107,15 @@ start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\featu
 if errorlevel 1 goto :site_failed
 
 echo [3/5] Building the feature cache...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [4/5] Building the SAM candidate cache (the slowest step)...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [5/5] Creating the species label layers...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo   -^> done
