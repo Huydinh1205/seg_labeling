@@ -6,12 +6,21 @@ REM  Edit the lines below before running:
 REM  - SITE: the site name (any name you like, used for folder/file naming)
 REM  - ORTHO: the FULL path to the .tif image, anywhere on this
 REM           machine, it does not have to be under data\raw
-REM  - PRIORITY: how much this script yields to other work on this
-REM           machine. "low" (default) means it only uses CPU the
-REM           other tasks are not using right now, so it will run
-REM           SLOWER whenever something else is busy, but never
-REM           competes with it. Use "belownormal" instead if "low"
-REM           makes it barely progress while other work is running.
+REM  - PRIORITY: how much this script competes with other work on
+REM           this machine for CPU time. Three choices:
+REM             low         - never competes. Only uses CPU that
+REM                           nothing else wants, so it slows down
+REM                           or nearly pauses while other work is
+REM                           busy, and speeds back up once it is
+REM                           free again. (default)
+REM             belownormal - still yields to other work, but gets
+REM                           a bigger share of CPU while doing so,
+REM                           use this if "low" barely progresses.
+REM             normal      - does not yield at all, this script
+REM                           competes for CPU exactly like any
+REM                           other ordinary program on the machine,
+REM                           which is the fastest option but can
+REM                           slow down whatever else is running.
 REM  Example:
 REM    set SITE=walpolla_island
 REM    set ORTHO=D:\Drone Data\2026\walpolla_ortho.tif

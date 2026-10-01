@@ -9,11 +9,19 @@ REM  List every site in sites.csv, next to this script, one line
 REM  each: site_name,C:\full\path\to\image.tif
 REM  See sites.csv.example for a template and the exact format.
 REM
-REM  PRIORITY: how much this script yields to other work on this
-REM  machine. "low" (default) means it only uses CPU other tasks
-REM  are not using, so it runs SLOWER whenever something else is
-REM  busy, but never competes with it. Use "belownormal" instead
-REM  if "low" makes it barely progress while other work is running.
+REM  PRIORITY: how much this script competes with other work on
+REM  this machine for CPU time. Three choices:
+REM    low         - never competes. Only uses CPU that nothing
+REM                  else wants, so it slows down or nearly pauses
+REM                  while other work is busy, and speeds back up
+REM                  once it is free again. (default)
+REM    belownormal - still yields to other work, but gets a bigger
+REM                  share of CPU while doing so, use this if "low"
+REM                  barely progresses.
+REM    normal      - does not yield at all, this script competes
+REM                  for CPU exactly like any other ordinary program
+REM                  on the machine, fastest but can slow down
+REM                  whatever else is running.
 REM ============================================================
 set MANIFEST=sites.csv
 set PRIORITY=low
