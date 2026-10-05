@@ -560,7 +560,14 @@ def build_sam_cache(cfg: dict, site: str, from_vector: str = None,
         print(f"Featurising {len(polys)} polygons from {from_vector}")
     else:
         mask_tif = str(cand_dir / "sam_mask.tif")
-        run_sam_automask(ortho_path, mask_tif, p["sam"])
+        if Path(mask_tif).exists() and not rebuild:
+            print(f"Reusing SAM mask from an earlier run: {mask_tif}  (use --rebuild to rerun SAM)")
+        else:
+            # Write under a temp name and rename only once SAM has finished, so an
+            # interrupted run never leaves a half-written mask that gets reused.
+            tmp_tif = str(cand_dir / "sam_mask.partial.tif")
+            run_sam_automask(ortho_path, tmp_tif, p["sam"])
+            os.replace(tmp_tif, mask_tif)
         polys, crs_wkt = polygonize_mask(mask_tif, p["sam"]["min_mask_region_area"])
         print(f"SAM produced {len(polys)} candidate masks")
 
