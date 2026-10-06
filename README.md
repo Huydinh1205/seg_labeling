@@ -511,6 +511,34 @@ Optionally set `qgis.utils.BV_PYTHON = r'C:\...\envs\bunjilview\python.exe'`
 before the `exec` line. Leave it out and the scripts read the interpreter path
 from `data/labels/<site>/site.json`.
 
+### 3.1b Slow machine? Pre-encode the image once
+
+By default Geo-SAM runs in **Live Encoding** mode: every click cuts a chip
+around the point and runs the SAM image encoder on it. With a GPU that is
+instant; on a CPU-only machine it is 5 to 10 seconds per click. Geo-SAM 2 can
+instead encode the whole image once and answer clicks from disk.
+
+1. Toolbar -> **Geo-SAM Image Encoder**. Input raster = the orthomosaic
+   layer; Bands 1, 2, 3; GeoSAM model = the one you will segment with (a
+   small one, SAM 2.1 Tiny or Small, is the right call on CPU); Output
+   feature-cache directory = a folder **outside OneDrive**, one per site,
+   e.g. `C:\geosam_features\<site>`. Under Advanced, **Target resolution**
+   0.05 m cuts the chip count by about 4x on a 2 to 3 cm ortho without
+   hurting plant-sized masks; raise **Sliding-window stride** to 768 or 1024
+   for fewer chips still. Leave "Use GPU" on, it is ignored without CUDA.
+   Expect hours on CPU for a 50k x 50k image, once per image.
+2. Run the four lines of 3.1 as usual (`repair_session.py`).
+3. In the Geo-SAM panel, tab **Input / Output**, switch the source dropdown
+   from **Live Encoding** to **Pre-encoded**, pick the output **folder** from
+   step 1 (the one holding `manifest.parquet`, not a `.pt` file), press
+   **Load**. The model dropdown locks to the model used for encoding. Keep the
+   orthomosaic layer in the project.
+
+`setup_geosam_session.py` sees the dropdown on Pre-encoded and leaves the
+feature folder alone when you click between species layers; before this it
+forced live encoding on every switch. A feature folder is tied to one image
+and one model: a different site or model needs its own folder.
+
 ### 3.2 Draw seed polygons
 
 1. Click the species layer in the **Layers** panel. Geo-SAM follows your click,

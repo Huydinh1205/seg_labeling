@@ -253,9 +253,37 @@ def _image_source_alive(sel, ras):
     return True
 
 
+def _pre_encoded_mode(sel):
+    """True when the Geo-SAM panel's source dropdown is on "Pre-encoded".
+
+    Geo-SAM 2 segments either from Live Encoding (encodes a chip around every
+    click, slow on CPU) or from a feature folder made once by its Image
+    Encoder. The plugin exposes no attribute for the mode, so read the
+    dropdown: the combo box whose items include both "Live Encoding" and
+    "Pre-encoded". Unknown layout -> False, i.e. the live-encoding handling
+    below runs as before.
+    """
+    try:
+        from qgis.PyQt.QtWidgets import QComboBox
+        for cb in sel.wdg_sel.findChildren(QComboBox):
+            items = [cb.itemText(i).lower() for i in range(cb.count())]
+            if any('pre-encoded' in t or 'pre_encoded' in t for t in items) \
+                    and any('live' in t for t in items):
+                return 'pre' in cb.currentText().lower()
+    except Exception:
+        pass
+    return False
+
+
 def _bind(sel, ras, target, say):
-    """Bind Geo-SAM to `target`. Image source FIRST, annotation layer SECOND."""
+    """Bind Geo-SAM to `target`. Image source FIRST, annotation layer SECOND.
+
+    In Pre-encoded mode the image source is the feature folder the user
+    loaded in the panel; touching the live-encoding combo would flip the
+    plugin back to live mode, so only the annotation layer is bound then.
+    """
     wdg = sel.wdg_sel
+    pre_encoded = _pre_encoded_mode(sel)
 
     # Commit anything unsaved on the previous layer so no work is lost.
     try:
@@ -273,7 +301,9 @@ def _bind(sel, ras, target, say):
     # clear_layers and rebuilds the runtime, which is slow, so do not do it on
     # every bind - but a stale reference is worse: pressing FG then dies with
     # "wrapped C/C++ object of type QgsRasterLayer has been deleted".
-    if not _image_source_alive(sel, ras):
+    if pre_encoded:
+        say('Geo-SAM is in Pre-encoded mode: leaving the loaded feature folder alone')
+    elif not _image_source_alive(sel, ras):
         if hasattr(sel, 'img_crs_manager'):
             delattr(sel, 'img_crs_manager')
             say('image source was stale, rebuilding it')
@@ -296,7 +326,7 @@ def _bind(sel, ras, target, say):
                 pass
             wdg.LiveEncodingLayerComboBox.setLayer(ras)
             sel.on_live_encoding_layer_changed()
-    if not hasattr(sel, 'img_crs_manager'):
+    if not pre_encoded and not hasattr(sel, 'img_crs_manager'):
         raise RuntimeError('img_crs_manager was not created, the image source '
                            'did not activate')
 
@@ -336,7 +366,7 @@ def _install_hook(repo, gpkg, names, ras_name, sel, say):
                 except RuntimeError:
                     cur = None
                 if (cur is not None and cur.id() == lyr.id()
-                        and _image_source_alive(sel, ras)):
+                        and (_pre_encoded_mode(sel) or _image_source_alive(sel, ras))):
                     return          # already bound and healthy: nothing to do
             if ras is None:
                 iface.messageBar().pushWarning(
@@ -498,7 +528,8 @@ def setup(repo=REPO, site=SITE, species=SPECIES, verbose=True):
     sel = geo.wdg_select
 
     bound = _bind(sel, ras, target, say)
-    say('image source active')
+    say('image source: %s' % ('pre-encoded feature folder (loaded in the panel)'
+                              if _pre_encoded_mode(sel) else 'live encoding of ' + ras.name()))
     say("Geo-SAM bound to '%s' (%d features)"
         % (bound.name() if bound else None, bound.featureCount() if bound else -1))
 
