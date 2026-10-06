@@ -570,6 +570,14 @@ def build_sam_cache(cfg: dict, site: str, from_vector: str = None,
             os.replace(tmp_tif, mask_tif)
         polys, crs_wkt = polygonize_mask(mask_tif, p["sam"]["min_mask_region_area"])
         print(f"SAM produced {len(polys)} candidate masks")
+        # Candidates outside match.min/max_area_m2 can never be accepted later,
+        # so drop them now: one image-sized mask alone cost 2h20 of featurising.
+        lo, hi = p["match"]["min_area_m2"], p["match"]["max_area_m2"]
+        kept = [poly for poly in polys if lo <= poly.area <= hi]
+        if len(kept) != len(polys):
+            print(f"dropped {len(polys) - len(kept)} candidate(s) outside "
+                  f"{lo}-{hi} m2 before featurising")
+        polys = kept
 
     if not polys:
         raise ValueError("No candidate polygons to cache.")

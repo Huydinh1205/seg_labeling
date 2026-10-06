@@ -15,10 +15,17 @@ echo " Site: $SITE"
 echo " Ortho: $ORTHO"
 echo "========================================"
 
+# Step 0: projected (UTM) copy at the working resolution, see config -> prepare
+echo ""
+echo "[0/6] Preparing orthomosaic..."
+python scripts/prepare_ortho.py --config $CONFIG --site "$SITE" --ortho "$ORTHO"
+PREP=$(python scripts/prepare_ortho.py --config $CONFIG --site "$SITE" --ortho "$ORTHO" --print-path)
+echo "      using: $PREP"
+
 # Step 1: tile the orthomosaic
 echo ""
 echo "[1/6] Tiling orthomosaic..."
-python src/tiling.py --config $CONFIG --ortho $ORTHO
+python src/tiling.py --config $CONFIG --ortho "$PREP" --site "$SITE"
 
 # Step 2: extract features with DINOv2
 echo ""

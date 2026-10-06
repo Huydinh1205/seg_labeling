@@ -303,6 +303,30 @@ in `data/labels/<site>/site.json`, so `--rasterize` and the QGIS session
 find it there without being told again. The Windows scripts in 2.8 and 2.9
 do all of this for you.
 
+### 2.1b Prepare the orthomosaic (metres, working resolution)
+
+```bash
+python scripts/prepare_ortho.py --config config.yaml --site <site> --ortho <image.tif>
+```
+
+The drone orthos arrive in EPSG:4326 (degrees) at 3 to 4 mm per pixel. That
+breaks three things at once: every area threshold in `config.yaml` is in
+square metres, so propagation drops every candidate; Geo-SAM's live encoding
+compares the clicked point with a chip it has projected to metres and fails
+with "Point prompt lies outside the chip bounds"; and at 3.7 mm a 1024 px SAM
+window shows grass texture rather than plants, so SAM finds almost nothing.
+`tiling.py` therefore refuses a geographic image outright.
+
+`prepare_ortho.py` reprojects to the UTM zone under the image (EPSG:32755 for
+Kosciuszko) and resamples down to `prepare.target_res_m` (0.5 cm by default,
+NESP wants fine edges; 0.01 makes everything about 4x faster). It never
+upsamples. The result goes to `data/prepared/<site>.tif` with internal
+overviews, and `data/prepared/<site>.path.txt` holds the path to use from
+then on: the prepared file, or the original when nothing needed doing (test1
+is already UTM at 4 cm, so it passes straight through). Re-running is a
+no-op. Use the prepared path in every later step; `run_pipeline.bat` does
+this as its step 0, and the QGIS session then loads the prepared image.
+
 ### 2.2 Cut the ortho into tiles
 
 ```bash
@@ -402,13 +426,13 @@ set SITE=your_site_name
 set ORTHO=C:\path\to\your\image.tif
 ```
 
-`ORTHO` is the full path to the orthomosaic wherever it actually lives on the
-machine, with or without quotes. It is read straight from there and never
-copied into `data\raw`, which matters for large images. Every step is given
-the path, and it is recorded in `data\labels\<site>\site.json` so the QGIS
-session (`repair_session.py`) loads the same file later. Keep the image at
-that path while you label the site. Save the file, then double-click it to
-run.
+`ORTHO` is the full path to the original orthomosaic wherever it lives on
+the machine, with or without quotes. Step 0 runs `scripts/prepare_ortho.py`
+on it (2.1b): a projected copy at the working resolution lands in
+`data\prepared\<site>.tif`, every later step reads that copy, and its path
+is recorded in `data\labels\<site>\site.json` so the QGIS session
+(`repair_session.py`) loads the same file later. The original is never
+modified. Save the file, then double-click it to run.
 
 Each step runs through PowerShell so progress prints live to the window while
 it works, and is also appended to a `run_<site>.log` file next to the script

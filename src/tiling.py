@@ -59,6 +59,23 @@ def tile_orthomosaic(
         profile = src.profile.copy()
         nodata = src.nodata
 
+        if src.crs is not None and src.crs.is_geographic:
+            raise SystemExit(
+                f"{ortho_path} is in a geographic CRS ({src.crs}); pixels are degrees, "
+                f"not metres, and every area threshold downstream assumes metres. Run "
+                f"scripts/prepare_ortho.py on it first (run_pipeline.bat does this "
+                f"automatically) and tile the prepared file.")
+
+        # Drone orthos usually carry the footprint in an alpha band rather than
+        # a nodata value. Use it, or 35% of the tiles are empty black squares
+        # that still cost DINOv2 and SAM time.
+        alpha_idx = None
+        if nodata is None:
+            from rasterio.enums import ColorInterp
+            ci = src.colorinterp
+            if len(ci) >= 4 and ci[3] == ColorInterp.alpha:
+                alpha_idx = 3
+
         # Number of tiles along each axis
         n_cols = math.ceil((W - overlap) / stride)
         n_rows = math.ceil((H - overlap) / stride)
@@ -85,12 +102,15 @@ def tile_orthomosaic(
                     window = Window(col_off, row_off, actual_w, actual_h)
                     data = src.read(window=window)  # (bands, H, W)
 
-                    # Check the nodata ratio
+                    # Check the nodata ratio (nodata value, else the alpha band)
+                    valid_mask = None
                     if nodata is not None:
                         valid_mask = (data[0] != nodata)
-                        if valid_mask.mean() < min_valid_fraction:
-                            pbar.update(1)
-                            continue
+                    elif alpha_idx is not None:
+                        valid_mask = (data[alpha_idx] > 0)
+                    if valid_mask is not None and valid_mask.mean() < min_valid_fraction:
+                        pbar.update(1)
+                        continue
 
                     # Pad the tile when it sits on the image border
                     if actual_w < tile_size or actual_h < tile_size:

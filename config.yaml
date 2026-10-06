@@ -41,7 +41,7 @@ tiling:
 dino:
   model: "facebook/dinov2-base"   # or dinov2-large for better features
   patch_size: 14                  # pixels per patch
-  batch_size: 4                   # tiles per forward pass
+  batch_size: 16                  # tiles per forward pass; 16 fits a 12 GB GPU, use 4 on CPU
   device: null                    # null -> autodetect cuda -> mps -> cpu per machine
   upsample_mode: "bilinear"       # interpolation for feature upsampling
 

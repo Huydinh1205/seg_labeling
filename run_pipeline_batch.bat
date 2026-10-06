@@ -8,7 +8,9 @@ REM
 REM  List every site in sites.csv, next to this script, one line
 REM  each: site_name,C:\full\path\to\image.tif
 REM  See sites.csv.example for a template and the exact format.
-REM  Each image is read straight from that path, nothing is copied.
+REM  Step 0 makes a projected (UTM, metres) copy of each image at the
+REM  working resolution from config.yaml -> prepare, under data\prepared\;
+REM  later steps and QGIS use that copy. Originals are never modified.
 REM
 REM  PRIORITY: how much this script competes with other work on
 REM  this machine for CPU time. Three choices:
@@ -98,8 +100,14 @@ if not exist "%ORTHO%" (
     goto :site_failed
 )
 
+echo [0/5] Preparing the orthomosaic ^(UTM metres, working resolution^)...
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\prepare_ortho.py --config config.yaml --site '%SITE%' --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+if errorlevel 1 goto :site_failed
+set /p PREP=<"data\prepared\%SITE%.path.txt"
+echo Prepared image: %PREP% >> "%LOG%"
+
 echo [1/5] Cutting the image into tiles...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%ORTHO%' --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\tiling.py --config config.yaml --ortho '%PREP%' --site '%SITE%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [2/5] Extracting DINOv2 features...
@@ -107,15 +115,15 @@ start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\featu
 if errorlevel 1 goto :site_failed
 
 echo [3/5] Building the feature cache...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-feature-cache --ortho '%PREP%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [4/5] Building the SAM candidate cache (the slowest step)...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' src\propagate.py --config config.yaml --site '%SITE%' --build-sam-cache --ortho '%PREP%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo [5/5] Creating the species label layers...
-start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' --ortho '%ORTHO%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
+start "" /%PRIORITY% /b /wait powershell -NoProfile -Command "& '%PY%' scripts\init_labels_gpkg.py --config config.yaml --site '%SITE%' --ortho '%PREP%' 2>&1 | ForEach-Object { $_; Add-Content -LiteralPath '%LOG%' -Value $_ -Encoding ascii }; exit $LASTEXITCODE"
 if errorlevel 1 goto :site_failed
 
 echo   -^> done
