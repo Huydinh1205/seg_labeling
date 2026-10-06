@@ -95,7 +95,7 @@ def prop_cfg(cfg: dict) -> dict:
     s.setdefault("min_mask_region_area", 400)
     pr = p["prototype"]
     pr.setdefault("topk", 3)
-    pr.setdefault("seed_sources", ["seed", "auto", None])
+    pr.setdefault("seed_sources", ["seed", "auto", "nesp", None])
     m = p["match"]
     m.setdefault("metric", "cosine")
     m.setdefault("threshold", 0.60)

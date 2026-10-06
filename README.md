@@ -572,6 +572,59 @@ Re-running propagation converges: on a real site it added 24, then 12, then 4,
 and never produced a duplicate. Two or three rounds with a cleanup in between
 is the normal rhythm.
 
+### 3.5 Working inside the company's "NESP Labelling" project
+
+The pipeline keeps its own species layers (`data/labels/<site>/<site>.gpkg`)
+because Geo-SAM needs its field set and propagation finds the site through
+`site.json` next to that file. The project's hand-drawn layers (`E. minus`,
+`all_species_fixed.shp`, ...) are a different file, so by themselves they are
+invisible to propagation: it would neither learn from them nor avoid them.
+Two scripts bridge the gap. Neither one modifies the project's files except
+to append to the target you name, and both take `--dry-run`.
+
+**Before a session: bring their polygons in as seeds.**
+
+```
+python scripts\import_seeds.py --config config.yaml --site <site> --from "Z:\...\all_species_fixed.shp" --dry-run
+python scripts\import_seeds.py --config config.yaml --site <site> --from "Z:\...\all_species_fixed.shp"
+```
+
+It reprojects, splits multipolygons, keeps only polygons that lie inside this
+site's orthomosaic (the project holds every site in one layer), works out
+which column really holds the species name by matching values against
+`config.yaml` (so the merged file whose `Species` column was wrong and
+`layer` column was right still imports correctly), maps the spellings
+(`E. minus` -> `Empidisma_minus`, `Sphagnum` -> `Sphagnum`), and appends to
+the matching layer with `source='nesp'`. `nesp` is in
+`propagate.prototype.seed_sources`, so these count as seeds, and because they
+now sit in the site's GeoPackage, propagation will not propose polygons on
+top of them. Re-running is a no-op (provenance key in `lb_note`, plus a
+geometry check). Per-species files work too, species taken from the file
+name: `--from "E. minus.shp" "Sphagnum.shp"`. A spelling it cannot match is
+listed at the end; add it with `--map "their name=Config_name"`.
+
+**After a session: hand the new polygons back.**
+
+```
+python scripts\export_to_nesp.py --config config.yaml --site <site> --to "Z:\...\all_species_fixed.shp" --dry-run
+python scripts\export_to_nesp.py --config config.yaml --site <site> --to "Z:\...\all_species_fixed.shp"
+```
+
+It sends the polygons made here (Geo-SAM seeds you drew, `auto` ones
+propagation added), never the ones that came from the project, in their
+spelling, with `id` continuing from the largest one in the target and
+`Review`/`Comments` left empty. The target file is backed up first
+(`<name>_backup_<timestamp>.*`), appended to, never rewritten. Every export
+is logged in `data/labels/<site>/nesp_exports.json`, so the next run only
+sends what is new; a polygon that overlaps an existing target polygon above
+IoU 0.9 is skipped as well. A per-species target (`--to "E. minus.shp"`)
+only receives that species. A target that does not exist yet is created
+with the project's four columns, in the site's CRS.
+
+In QGIS the two sets of layers live side by side in the same project: work
+on the pipeline's (full Latin names), export, then remove them from the
+project (the data stays in the GeoPackage).
+
 ---
 
 ## 4. Run: the automated pipeline

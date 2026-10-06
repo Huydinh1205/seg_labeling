@@ -113,7 +113,8 @@ propagate:
 
   prototype:
     topk: 3                   # k-means centroids per species (1 = plain mean)
-    seed_sources: ["seed", "auto", null]  # which polygons count as positives on re-run
+    seed_sources: ["seed", "auto", "nesp", null]  # which polygons count as positives on re-run
+                                     # (nesp = imported from the NESP Labelling project)
 
   match:
     metric: "cosine"
