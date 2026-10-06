@@ -477,6 +477,17 @@ def setup(repo=REPO, site=SITE, species=SPECIES, verbose=True):
         raise RuntimeError('no raster layer %r in the project and %s does not exist'
                            % (site, ortho))
 
+    # Geo-SAM takes the clicked point in the PROJECT CRS and compares it with
+    # the raster chip in the RASTER CRS without converting ("Point prompt lies
+    # outside the chip bounds", "Bounding-box CRS is missing", and a rectangle
+    # instead of a mask). A project in EPSG:4326 over a UTM ortho hits this on
+    # every click, so the project CRS follows the ortho. Display only, no data
+    # is changed.
+    if proj.crs() != ras.crs():
+        proj.setCrs(ras.crs())
+        say('project CRS set to %s to match the orthomosaic (Geo-SAM needs this)'
+            % ras.crs().authid())
+
     # -- plugin --
     geo = plugins.get('GeoSAM')
     if geo is None:
