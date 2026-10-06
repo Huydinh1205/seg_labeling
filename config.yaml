@@ -21,12 +21,11 @@ classes:
   3:  Poa_costiniana     # snow grass
   4:  Carex_gaudichaudiana  # fen sedge
   5:  Celmisia_pugioniformis  # slender snow daisy
-  6:  Sphagnum_R         # sphagnum red-type
-  7:  Sphagnum_G         # sphagnum green-type
-  8:  Sphagnum_Y         # sphagnum yellow-type
-  9:  Other
+  6:  Sphagnum           # one class, matching the NESP labelling project
+                         # (it keeps R/G/Y types together)
+  7:  Other
 
-num_classes: 10
+num_classes: 8
 
 # ============================================================
 # Tiling

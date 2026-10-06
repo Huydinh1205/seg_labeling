@@ -13,7 +13,7 @@ It does the following, in order:
   3. Apply the 4 plugin patches and VERIFY them; stop immediately if any
      patch is missing.
   4. Reload the plugin again so the patched code is loaded.
-  5. Rebuild the session: load the ortho + the 9 species layers, one colour
+  5. Rebuild the session: load the ortho + every species layer, one colour
      per species, and bind Geo-SAM.
   6. Self-test: binding works on every layer, drawing works, and values land
      in the right columns. Every test polygon is deleted once checked.

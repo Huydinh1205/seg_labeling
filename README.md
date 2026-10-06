@@ -561,8 +561,8 @@ count()                     # polygon count per species layer
 delete_selected()           # delete the current selection
 delete_auto()               # delete every auto polygon on the active layer,
                             # keeping the ones you drew
-delete_auto('Sphagnum_R')   # ... on a named layer
-delete_all('Sphagnum_R')    # wipe one layer completely
+delete_auto('Sphagnum')     # ... on a named layer
+delete_all('Sphagnum')      # wipe one layer completely
 ```
 
 These commit straight to disk, so there is no Ctrl+S and no undo (except for
@@ -780,10 +780,13 @@ these strings.
 | 3 | `Poa_costiniana` | snow grass | tussock |
 | 4 | `Carex_gaudichaudiana` | fen sedge | green, wet ground |
 | 5 | `Celmisia_pugioniformis` | slender snow daisy | small white flowers |
-| 6 | `Sphagnum_R` | sphagnum, red type | red |
-| 7 | `Sphagnum_G` | sphagnum, green type | green |
-| 8 | `Sphagnum_Y` | sphagnum, yellow type | yellow |
-| 9 | `Other` | anything else | |
+| 6 | `Sphagnum` | sphagnum (red, green and yellow types together) | red to yellow |
+| 7 | `Other` | anything else | |
+
+Sphagnum used to be three classes (`Sphagnum_R`, `_G`, `_Y`). It is one class
+now to match the NESP labelling project, which keeps a single Sphagnum layer.
+Sites created before this change still carry the three layers; they keep
+working, QGIS just also shows an empty `Sphagnum` layer for them.
 
 To add or rename a species, edit `config.yaml -> classes`, then re-run
 `scripts/init_labels_gpkg.py` to create the new layer. Nothing is hardcoded

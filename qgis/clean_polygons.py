@@ -11,8 +11,8 @@ Then:
     delete_selected()           # delete the currently selected polygons
     delete_auto()               # delete every machine-made polygon on the
                                 # active layer, keep the ones you drew
-    delete_auto('Sphagnum_R')   # ... on a specific layer
-    delete_all('Sphagnum_R')    # wipe one layer (hand-drawn ones too)
+    delete_auto('Sphagnum')     # ... on a specific layer
+    delete_all('Sphagnum')      # wipe one layer (hand-drawn ones too)
 
 Everything is committed to disk, so no Ctrl+S needed afterwards.
 There is no undo, except for delete_selected() before you save.
@@ -40,7 +40,7 @@ def _pick(name=None):
     l = iface.activeLayer()
     if l is None or SITE + '.gpkg' not in l.source():
         print('no species layer is active. Click one in the Layers panel first, '
-              'or pass a name: delete_auto("Sphagnum_R")')
+              'or pass a name: delete_auto("Sphagnum")')
         return None
     return l
 

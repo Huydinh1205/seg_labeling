@@ -5,7 +5,7 @@ Run in the QGIS Python Console, once per session and whenever you want to
 switch species:
 
     exec(open('<REPO>/qgis/setup_geosam_session.py').read())
-    setup(species='Sphagnum_R')
+    setup(species='Sphagnum')
 
 What it does:
   1. Loads the orthomosaic and EVERY species layer of the site, each in its
@@ -84,7 +84,8 @@ PALETTE = {
     'Poa_costiniana':           '#ffe119',   # yellow
     'Carex_gaudichaudiana':     '#42d4f4',   # cyan
     'Celmisia_pugioniformis':   '#fabed4',   # pink
-    'Sphagnum_R':               '#911eb4',   # purple
+    'Sphagnum':                 '#911eb4',   # purple
+    'Sphagnum_R':               '#911eb4',   # purple  (older sites that split it)
     'Sphagnum_G':               '#4363d8',   # blue
     'Sphagnum_Y':               '#ffffff',   # white
     'Other':                    '#a9a9a9',   # grey
